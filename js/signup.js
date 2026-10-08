@@ -26,6 +26,8 @@ function refresh() {
  document.getElementById('signupMode').textContent=ready?t.real:l.mode;
  document.getElementById('privacyLink').textContent=t.notice;
  document.getElementById('roleInvitation').textContent=role?l[role]:'';
+ const labels={en:['Education · Design · Technology','Contact details coming soon','Future collaborations'],fi:['Kasvatus · Muotoilu · Teknologia','Yhteystiedot tulossa pian','Tulevat yhteistyömahdollisuudet'],zh:['教育 · 设计 · 技术','联系方式即将公布','未来合作机会'],sv:['Pedagogik · Design · Teknik','Kontaktuppgifter kommer snart','Framtida samarbeten'],es:['Educación · Diseño · Tecnología','Datos de contacto próximamente','Futuras colaboraciones']}[lang];
+ ['card1b','card2b','card3b'].forEach((key,i)=>document.querySelector('[data-i18n='+key+']').textContent=labels[i]);
  button.textContent=ready?(busy?t.pending:t.submit):l.button;
  document.querySelector('[data-i18n=fine]').textContent=ready?t.real:l.fine;
  document.querySelector('[data-i18n=consent]').textContent=t.consent;
