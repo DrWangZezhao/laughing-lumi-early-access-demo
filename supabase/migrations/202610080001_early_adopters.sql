@@ -1,7 +1,7 @@
 begin;
 create table public.early_adopters (
  id uuid primary key default gen_random_uuid(),
- email text not null check (email = lower(btrim(email)) and length(email) between 3 and 254 and email ~ '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$'),
+ email text not null check (email = lower(btrim(email)) and length(email) between 3 and 254 and email ~ '^[^[:space:]@]+@[^[:space:]@]+[.][^[:space:]@]+$'),
  role text not null check (role in ('parent','teacher')),
  interested_in_pilot boolean not null default false,
  contact_consent boolean not null check (contact_consent),

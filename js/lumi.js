@@ -89,7 +89,9 @@ function translate(code){lang=code;document.documentElement.lang=code==='zh'?'zh
 document.querySelectorAll('[data-lang]').forEach(b=>b.addEventListener('click',()=>translate(b.dataset.lang)));
 document.querySelectorAll('input[name=role]').forEach(r=>r.addEventListener('change',()=>{if(stage==='form'&&!transitioning){setPose('wave');talk('bForm')}}));
 const email=document.getElementById('email'),consent=document.getElementById('consent');
-email.addEventListener('focus',()=>{if(stage!=='form'&&!drag){moveTo('form',false)}setTimeout(()=>{if(stage==='form'&&!transitioning&&!drag){setPose('peek');talk('bPeek');positionActor(stage)}},1100)});
+// Do not start a scene transition from the input's focus event. On mobile and
+// assistive browsers that can steal focus before the first character is typed.
+email.addEventListener('focus',()=>{setTimeout(()=>{if(!transitioning&&!drag){setPose('peek');talk('bPeek');positionActor(stage)}},250)});
 email.addEventListener('blur',()=>{if(stage==='form'&&!transitioning&&!drag){setPose('stand');talk('bForm',true)}});
 consent.addEventListener('focus',()=>{if(stage==='form'&&!transitioning&&!drag){setPose('wave');talk('bConsent')}});
 consent.addEventListener('change',()=>{if(stage==='form'&&!transitioning&&!drag)talk('bConsent',true)});

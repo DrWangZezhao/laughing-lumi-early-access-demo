@@ -22,7 +22,8 @@ const launchCopy={
 function words(){return copy[lang] || copy.en;}
 function refresh() {
  const t=words(),l=launchCopy[lang],role=form.querySelector('[name=role]:checked')?.value;
- document.getElementById('registrationFields').disabled=!ready;
+ // Keep the controls usable while signup is gated. Visitors can read the notice,
+ // type an address, and tick consent; the submit handler still refuses to send it.
  document.getElementById('signupMode').textContent=ready?t.real:l.mode;
  document.getElementById('privacyLink').textContent=t.notice;
  document.getElementById('roleInvitation').textContent=role?l[role]:'';
