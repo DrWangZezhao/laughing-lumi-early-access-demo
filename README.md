@@ -3,7 +3,7 @@
 Approved V6 design, five original mascot poses, five languages and pointer/touch dragging. Plain HTML/CSS/JavaScript; no production dependencies or paid service required.
 
 - Website: https://DrWangZezhao.github.io/laughing-lumi-early-access-demo/
-- Real signup: **OFF**. Email entry and submission are disabled; the page says registration opens soon.
+- Real signup: **ON**. The public form validates in the browser, then stores adult early-access registrations through the Supabase Edge Function in the EU (Ireland) project. The future demo redirect remains OFF until the demo route is ready.
 - Demo redirect: **OFF**. `demo/index.html` reserves the future route.
 - Supabase: source prepared, **not provisioned or verified against a live project**.
 
@@ -25,7 +25,7 @@ Open http://localhost:8765. No npm install is needed for production or the core 
 
 ## Updating with Codex
 
-Ask Codex to open this repository, describe the change, preserve the approved V6 design and keep signup/redirect disabled unless explicitly activating them. Review changes, run `npm test` and browser checks, then push approved changes to `main`. The Pages Action tests, packages only public website files and deploys automatically. Check its successful run and the public HTTPS page. Revert a bad commit on `main` to roll back; Actions redeploys that version.
+Ask Codex to open this repository, describe the change, preserve the approved V6 design and keep the future demo redirect disabled unless explicitly activating it. Review changes, run `npm test` and browser checks, then push approved changes to `main`. The Pages Action tests, packages only public website files and deploys automatically. Check its successful run and the public HTTPS page. Revert a bad commit on `main` to roll back; Actions redeploys that version.
 
 The backend deploys separately using the manual Supabase workflow. Editing the website does not automatically apply database migrations or change server secrets. Never add signup exports, credentials or real test data to this public repository.
 

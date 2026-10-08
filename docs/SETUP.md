@@ -6,7 +6,7 @@ Repository Settings → Pages → Build and deployment → Source: **GitHub Acti
 
 ## Later: create the secure database
 
-The owner created a Supabase account on 8 October 2026; project setup and live verification are pending. Do not replace the registration database with a public Google Drive sheet. Until the following setup is complete, keep email entry and submission disabled.
+The production collection is live in the `laughing-lumi-early-access` Supabase project (West EU / Ireland). Do not replace the registration database with a public Google Drive sheet. The public build stores adult early-access registrations through the `signup` Edge Function with server-side validation and RLS; no database key is shipped to the browser.
 
 1. Sign up/sign in to Supabase; create a Free-plan project in an available EU region. Verify the region, provider contracts and any transfer safeguards with the controller. Store its database password in a password manager.
 2. Create GitHub environment `supabase-production`. Restrict deployment to `main` and configure a required reviewer where available. Add environment secrets `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_ID`, `SUPABASE_DB_PASSWORD`. Never put these in files or chat. Limit administrator access and use MFA.

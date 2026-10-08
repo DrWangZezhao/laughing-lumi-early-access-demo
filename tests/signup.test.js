@@ -45,7 +45,11 @@ test('redirect disabled by default; configured route respects project prefix and
  for(const url of ['https://evil.test/','javascript:alert(1)','./demo/?email=someone','https://user:pass@example.test/','./demo/#private'])assert.throws(()=>redirectDestination({...c,DEMO_REDIRECT_ENABLED:true,DEMO_REDIRECT_URL:url},base));
  assert.equal(redirectDestination({...c,DEMO_REDIRECT_ENABLED:true,DEMO_REDIRECT_URL:'https://demo.example.test/',TRUSTED_DEMO_ORIGINS:['https://demo.example.test']},base),'https://demo.example.test/');
 });
-test('published configuration has collection and redirect switched off',async()=>{
+test('published configuration has live collection and redirect switched off',async()=>{
  const context={window:{}};vm.runInNewContext(await readFile(new URL('../js/config.js',import.meta.url),'utf8'),context);
- assert.equal(context.window.LUMI_CONFIG.REAL_SIGNUP_ENABLED,false);assert.equal(context.window.LUMI_CONFIG.DEMO_REDIRECT_ENABLED,false);
+ assert.equal(context.window.LUMI_CONFIG.REAL_SIGNUP_ENABLED,true);
+ assert.equal(context.window.LUMI_CONFIG.PRIVACY_READY,true);
+ assert.equal(context.window.LUMI_CONFIG.PRIVACY_NOTICE_VERSION,'public-2026-10-08');
+ assert.equal(context.window.LUMI_CONFIG.SIGNUP_ENDPOINT,'https://vgeseoyoztogthygvzog.supabase.co/functions/v1/signup');
+ assert.equal(context.window.LUMI_CONFIG.DEMO_REDIRECT_ENABLED,false);
 });
