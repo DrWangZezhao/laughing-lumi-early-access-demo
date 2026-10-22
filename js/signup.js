@@ -26,9 +26,13 @@ function refresh() {
  // type an address, and tick consent; the submit handler still refuses to send it.
  document.getElementById('signupMode').textContent=ready?t.real:l.mode;
  document.getElementById('privacyLink').textContent=t.notice;
- document.getElementById('roleInvitation').textContent=role?l[role]:'';
- const labels={en:['Education · Design · Technology','Contact details coming soon','Future collaborations'],fi:['Kasvatus · Muotoilu · Teknologia','Yhteystiedot tulossa pian','Tulevat yhteistyömahdollisuudet'],zh:['教育 · 设计 · 技术','联系方式即将公布','未来合作机会'],sv:['Pedagogik · Design · Teknik','Kontaktuppgifter kommer snart','Framtida samarbeten'],es:['Educación · Diseño · Tecnología','Datos de contacto próximamente','Futuras colaboraciones']}[lang];
- ['card1b','card2b','card3b'].forEach((key,i)=>document.querySelector('[data-i18n='+key+']').textContent=labels[i]);
+ document.getElementById('roleInvitation').textContent=l[role]||'';
+ const extra=window.LUMI_COMMUNITY_COPY[lang] || window.LUMI_COMMUNITY_COPY.en;
+ document.querySelectorAll('[data-extra]').forEach(el=>el.textContent=extra[el.dataset.extra]);
+ const testing=role==='parent'||role==='teacher';
+ document.getElementById('registrationFields').hidden=role==='none';
+ document.getElementById('registrationFields').querySelectorAll('input,button').forEach(el=>el.disabled=!testing||busy);
+ document.getElementById('investorNavigation').hidden=!document.getElementById('investor').checked;
  button.textContent=ready?(busy?t.pending:t.submit):l.button;
  document.querySelector('[data-i18n=fine]').textContent=ready?t.real:l.fine;
  document.querySelector('[data-i18n=consent]').textContent=t.consent;
@@ -36,15 +40,18 @@ function refresh() {
  document.querySelector('[data-nav=privacyText]').textContent=ready?t.real:l.privacyBody;
  document.querySelector('[data-nav=thanksBody]').textContent=t.thanks;
  if(!ready)document.querySelector('[data-i18n=signupText]').textContent=l.mode;
- I18N[lang].bForm=role?l[role]:l.mode;
+ I18N[lang].bForm=l[role]||l.mode;
 }
 form.querySelectorAll('[name=role]').forEach(input=>input.addEventListener('change',()=>{refresh();if(stage==='form')talk('bForm',true);}));
+document.getElementById('investor').addEventListener('change',refresh);
 window.addEventListener('lumi:language',refresh); refresh();
 function consentHint(){ if(stage==='form'&&!transitioning&&!drag){setPose('wave');talk('bConsent',true);} }
 consent.closest('label').addEventListener('pointerenter',consentHint);
 consent.closest('label').addEventListener('pointerdown',consentHint,{passive:true});
 form.addEventListener('submit',async e=>{
- e.preventDefault(); if(busy)return; if(!ready){status.textContent=launchCopy[lang].fine;return;}
+ e.preventDefault(); if(busy)return;
+ const role=form.querySelector('[name=role]:checked')?.value;
+ if(role!=='parent'&&role!=='teacher')return; if(!ready){status.textContent=launchCopy[lang].fine;return;}
  status.textContent='';
  if(!form.checkValidity()){status.textContent=words().prompt;form.reportValidity();return;}
  busy=true;button.disabled=true;form.setAttribute('aria-busy','true');

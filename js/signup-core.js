@@ -15,6 +15,7 @@ export function redirectDestination(c, base) {
 }
 export async function sendSignup(c, data, fetcher = fetch) {
   if (!realSignupReady(c)) throw Error('Signup unavailable');
+  if (!['parent','teacher'].includes(data.role) || Object.keys(data).some(key=>/investor/i.test(key))) throw Error('Testing registrations only');
   const response = await fetcher(c.SIGNUP_ENDPOINT, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data), credentials: 'omit', referrerPolicy: 'no-referrer',

@@ -53,3 +53,11 @@ test('published configuration has live collection and redirect switched off',asy
  assert.equal(context.window.LUMI_CONFIG.SIGNUP_ENDPOINT,'https://vgeseoyoztogthygvzog.supabase.co/functions/v1/signup');
  assert.equal(context.window.LUMI_CONFIG.DEMO_REDIRECT_ENABLED,false);
 });
+test('investor-only and none roles never reach the signup endpoint',async()=>{
+ let calls=0;const fetcher=async()=>{calls++;return Response.json({stored:true});};
+ for(const role of ['none','investor','parent+investor','teacher+investor'])await assert.rejects(()=>sendSignup(c,{...data,role},fetcher));
+ await assert.rejects(()=>sendSignup(c,{...data,investor:true},fetcher));
+ assert.equal(calls,0);
+ for(const role of ['parent','teacher'])await sendSignup(c,{...data,role},fetcher);
+ assert.equal(calls,2);
+});
