@@ -5,3 +5,5 @@ The /investors/ route is a safe public landing page. The complete supplied V4 wi
 Investor interest is local UI state only. Only parent/teacher testing registrations with the existing consent workflow can reach the existing Supabase endpoint.
 
 2026-10-22 follow-up: the explicit Investor radio option navigates straight to /investors/ without submitting testing data. The independent investor-interest checkbox is retained for parent/teacher combinations. Co-founders precede advisors; the CRO display name is Dr Zezhao Wang (Zed).
+
+Public release approved by the user on 2026-10-22 for the complete supplied V4 and all embedded reports and financial workbooks. The full V4 is now served at /investors/, preserving eight languages, charts, financial tables, reports, and the existing form behavior. Original mascot/logo image URLs now use local stable assets. Every embedded attachment also has a stable public file URL.
