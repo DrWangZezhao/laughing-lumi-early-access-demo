@@ -7,3 +7,5 @@ Investor interest is local UI state only. Only parent/teacher testing registrati
 2026-10-22 follow-up: the explicit Investor radio option navigates straight to /investors/ without submitting testing data. The independent investor-interest checkbox is retained for parent/teacher combinations. Co-founders precede advisors; the CRO display name is Dr Zezhao Wang (Zed).
 
 Public release approved by the user on 2026-10-22 for the complete supplied V4 and all embedded reports and financial workbooks. The full V4 is now served at /investors/, preserving eight languages, charts, financial tables, reports, and the existing form behavior. Original mascot/logo image URLs now use local stable assets. Every embedded attachment also has a stable public file URL.
+
+Investor contact flow now uses the publicly listed team email laughinglumi@gmail.com and four verified co-founder LinkedIn profiles. All five co-founders are shown. The disconnected investor inquiry form was replaced by direct contact; no inquiry data is sent to Supabase. Email links open a composer and do not send automatically. All new flow text is localized in eight languages.

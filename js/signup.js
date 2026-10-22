@@ -42,7 +42,7 @@ function refresh() {
  if(!ready)document.querySelector('[data-i18n=signupText]').textContent=l.mode;
  I18N[lang].bForm=l[role]||l.mode;
 }
-form.querySelectorAll('[name=role]').forEach(input=>input.addEventListener('change',()=>{refresh();if(input.checked&&input.value==='investor'){window.location.assign(new URL('investors/?v=480f866',document.baseURI).href);return;}if(stage==='form')talk('bForm',true);}));
+form.querySelectorAll('[name=role]').forEach(input=>input.addEventListener('change',()=>{refresh();if(input.checked&&input.value==='investor'){window.location.assign(new URL('investors/?v=team-20261022',document.baseURI).href);return;}if(stage==='form')talk('bForm',true);}));
 document.getElementById('investor').addEventListener('change',refresh);
 window.addEventListener('lumi:language',refresh); refresh();
 function consentHint(){ if(stage==='form'&&!transitioning&&!drag){setPose('wave');talk('bConsent',true);} }
