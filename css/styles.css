@@ -114,3 +114,5 @@ footer{padding:25px 0 38px;border-top:1px solid #e2e8e8;color:#78909a;font-size:
 @media(max-width:360px){.hero h1,.hero.vacant h1{font-size:34px}.word{max-width:100%}}
 
 [hidden]{display:none!important}.team-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr))}.profile{text-align:center}.portrait{width:88px;height:88px;margin:0 auto 20px;border-radius:50%;display:grid;place-items:center;background:var(--yellow);color:var(--ink);font-size:28px;font-weight:700}.profile a{text-decoration:underline}.profile h3{font-size:22px}.ctas{flex-wrap:wrap}
+/* Keep signup controls clickable when the draggable mascot crosses the form. */
+#signup .form{position:relative;z-index:33}

@@ -30,9 +30,9 @@ function refresh() {
  const extra=window.LUMI_COMMUNITY_COPY[lang] || window.LUMI_COMMUNITY_COPY.en;
  document.querySelectorAll('[data-extra]').forEach(el=>el.textContent=extra[el.dataset.extra]);
  const testing=role==='parent'||role==='teacher';
- document.getElementById('registrationFields').hidden=role==='none';
+ document.getElementById('registrationFields').hidden=role==='investor';
  document.getElementById('registrationFields').querySelectorAll('input,button').forEach(el=>el.disabled=!testing||busy);
- document.getElementById('investorNavigation').hidden=!document.getElementById('investor').checked;
+ document.getElementById('investorNavigation').hidden=role!=='investor'&&!document.getElementById('investor').checked;
  button.textContent=ready?(busy?t.pending:t.submit):l.button;
  document.querySelector('[data-i18n=fine]').textContent=ready?t.real:l.fine;
  document.querySelector('[data-i18n=consent]').textContent=t.consent;
@@ -42,7 +42,7 @@ function refresh() {
  if(!ready)document.querySelector('[data-i18n=signupText]').textContent=l.mode;
  I18N[lang].bForm=l[role]||l.mode;
 }
-form.querySelectorAll('[name=role]').forEach(input=>input.addEventListener('change',()=>{refresh();if(stage==='form')talk('bForm',true);}));
+form.querySelectorAll('[name=role]').forEach(input=>input.addEventListener('change',()=>{refresh();if(input.checked&&input.value==='investor'){window.location.assign(new URL('investors/',document.baseURI).href);return;}if(stage==='form')talk('bForm',true);}));
 document.getElementById('investor').addEventListener('change',refresh);
 window.addEventListener('lumi:language',refresh); refresh();
 function consentHint(){ if(stage==='form'&&!transitioning&&!drag){setPose('wave');talk('bConsent',true);} }
