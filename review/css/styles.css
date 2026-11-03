@@ -122,3 +122,5 @@ footer{padding:25px 0 38px;border-top:1px solid #e2e8e8;color:#78909a;font-size:
 .lang button{min-width:44px;min-height:44px}.sitebar{padding-top:env(safe-area-inset-top)}input[type=email]{font-size:16px}.ecosystem-nav a{min-height:44px;display:inline-flex;align-items:center}
 /* Keep the four website destinations available on touch screens as well. */
 @media(max-width:1050px){.nav{flex-wrap:wrap}.links{display:flex;order:3;width:100%;justify-content:space-between;gap:8px;flex-wrap:wrap}.links a{display:inline-flex;align-items:center;min-height:44px}}
+
+img.portrait{object-fit:cover;object-position:center;}
