@@ -1,0 +1,29 @@
+# Release review continuation — 3 November 2026
+
+Re-fetched the canonical GitHub repository before editing: main remains `6cba85d8405f43568cc6e38bfc291059ce555734`. It is not empty in the checked revision: it contains the older long investor page. The existing new implementation on `feature/investor-opportunity` was reused instead of creating a duplicate. Latest pitch was fetched again after its 17:03 UTC modification; founder roles remain CIO/CPO/CTO/CRO/CMO. Finance source remains unchanged.
+
+## Completed in this continuation
+
+Annualized gross customer billings are now prominent alongside annualized net sales and contribution. Chart paths derive from computed scenario series with stable axes per household band; both pricing and fees change the plotted slope, and the current household marker responds to scale. All five languages have the explicit illustrative/not-actual-results disclaimer. Public Research now has ten localized downloadable editorial summaries, with exact original source titles and dates, containing no participant rows or fundraising pipelines. These are identified as summaries, not new research findings.
+
+Native range controls have 44px touch areas and vertical-scroll-friendly touch-action; mobile has a compact sticky net-sales readout, safe-area spacing and accessible segmented controls. A real Firefox 320px Swedish long-word overflow was found and fixed with min-width and hyphenation/wrapping. V6 homepage visual and character interaction remain intact. Primary navigation remains Home / Early Access / Research / For Investors. Internal Demo identifiers are retained for compatibility; no primary visible Demo brand was added.
+
+## Reproducible verification
+
+`npm test`: 28/28 pass. `npm run build`: pass. `npm run test:browser` uses the dev-only pinned Playwright dependency; production has no frontend framework/runtime dependency. The browser runner intercepts every production signup request and never writes live personal data. It checks withholding success while awaiting durable confirmation, rejecting stored:false, required consent, language changes, keyboard input, monthly/annual chart changes, reset/disclosure, mouse/touch range changes, image loading and horizontal overflow.
+
+Locally, Chromium and Firefox each passed all ten requested viewports: 320×568, 360×800, 375×812, 390×844, 414×896, 768×1024, 1024×768, 1366×768, 1440×900, 1920×1080. This is 20 engine/viewport configurations; investor/research language checks run across all five locales in each configuration. Detailed form and interaction checks run at 390 and 1440 widths. Genuine Chromium touch drag and Firefox touch tap are tested, not just synthetic DOM events. Physical iPhone/Android devices are not connected.
+
+Playwright WebKit on local macOS 14.5 launches its process but cannot create a page; headless and headed probes time out. Native Safari control also timed out. This is **not a passing Safari test**. A new PR quality workflow installs Chromium/WebKit/Firefox on Ubuntu to obtain an independent engine result without modifying macOS security/automation settings. Its actual status must be read separately; do not infer success merely from workflow source.
+
+The original live collection path and DNS remain unchanged. The isolated hosted review artifact is generated from this single canonical source with `LUMI_BUILD_DIR=../lumi-staging/dist npm run build:staging`, then synchronized to the owner-private Sites deployment. The provider mirror contains only public static artifacts and a provenance README, not an independent Europe/China application. In this artifact real collection is disabled and the privacy page states that no registrations are collected. No backend code, credentials, customer rows or legacy private reports are served.
+
+## Hosted review and gates
+
+Owner-private review URL: https://laughing-lumi-review-20261103.zedwang.chatgpt.site . Provider reported successful deployment `appgdep_6aea164577d48191a4fb54faba8fc4ea` from mirror commit `2f66f7f150c6c8571693e8ef11ae0907d771fa54`. In-app browser confirms authentication gate; its OpenAI Google continuation currently errors before an authenticated session is established. Thus hosted content end-to-end inspection is blocked by that login, and is not reported as passed. The same artifact's frontend is tested locally; the isolated review disables collection deliberately.
+
+Google Sheets permissions were read again: existing Registrations sheet remains in the specified User Data folder and permission metadata lists named team members only. Existing Lumi Research folder remains under the official team root with the same restricted member list. Neither was duplicated. Secure adapter code remains prepared in the existing owner-private Apps Script project. Google authorization, deployment and server-only secrets have not been supplied; live Sheets persistence/duplicate/deletion tests therefore remain unperformed. User-confirmed zero legacy Supabase records means no migration is needed.
+
+No final company domain is claimed. Company-domain ownership/DNS account access and a China-hosting account remain external prerequisites; no mainland network test was performed. Existing hosting assessment applies. The review provider URL is an isolated owner-private review URL, not the final public company URL.
+
+Production integration is gated on real Sheets persistence and deletion tests, approved controller/notice/retention/provider arrangements, required browser acceptance and a reviewed release. Keep this as a draft PR; do not merge it or alter production on the strength of mocked tests.

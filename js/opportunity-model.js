@@ -31,3 +31,13 @@ export function scenario(input={}) {
 export function formatMoney(value,locale='en') {return new Intl.NumberFormat(locale,{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(value);}
 export function formatCount(value,locale='en') {return new Intl.NumberFormat(locale,{maximumFractionDigits:0}).format(value);}
 export function resetScenario() {return {...DEFAULTS};}
+
+// Stable axes within each household band make plan/fee and customer changes comparable.
+export function salesSensitivity(input={}) {
+ const a={...DEFAULTS,...input};const xMax=[1000,10000,100000,500000].find(n=>n>=a.paying)||500000;
+ const yMax=xMax*BASELINE.monthlyPrice*12/(1+BASELINE.vat);
+ const point=n=>{const y=scenario({...a,paying:n}).annualNet;return {x:20+960*n/xMax,y:125-110*y/yMax};};
+ const points=Array.from({length:9},(_,i)=>point(Math.round(xMax*i/8)));
+ const line=points.map((p,i)=>(i?'L':'M')+p.x.toFixed(2)+' '+p.y.toFixed(2)).join(' ');
+ return {xMax,yMax,line,area:line+' L980 125 L20 125 Z',dot:point(a.paying),endNet:scenario({...a,paying:xMax}).annualNet};
+}

@@ -118,3 +118,5 @@ footer{padding:25px 0 38px;border-top:1px solid #e2e8e8;color:#78909a;font-size:
 #signup .form{position:relative;z-index:33}
 
 .ecosystem-nav{display:flex;gap:20px;font-size:12px;color:var(--blue)}
+
+.lang button{min-width:44px;min-height:44px}.sitebar{padding-top:env(safe-area-inset-top)}input[type=email]{font-size:16px}.ecosystem-nav a{min-height:44px;display:inline-flex;align-items:center}
