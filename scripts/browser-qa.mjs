@@ -14,6 +14,7 @@ for(const engine of (process.env.QA_ENGINES||'chromium,webkit,firefox').split(',
  const page=await context.newPage();page.setDefaultTimeout(10000);page.setDefaultNavigationTimeout(15000);const errors=[];page.on('pageerror',e=>errors.push(e.message));
  try{
  for(const route of ['/','/research/','/investors/']){await page.goto(base+route+'?lang=en',{waitUntil:'networkidle'});await check(page,engine+width+route);
+  if(route==='/'){assert.equal(await page.locator('.links a').count(),4);assert.ok(await page.locator('.links').isVisible(),'primary navigation hidden');}
   if(route==='/investors/'){assert.ok((await page.locator('h1').innerText()).includes('real-world'));for(const lang of ['en','fi','zh','sv','es']){await page.locator('#language').selectOption(lang);await check(page,engine+width+route+lang);assert.equal(await page.locator('html').getAttribute('lang'),lang==='zh'?'zh-CN':lang);}await page.locator('#language').selectOption('en');}
   if(route==='/research/'){for(const lang of ['en','fi','zh','sv','es']){await page.locator('#language').selectOption(lang);await check(page,engine+width+route+lang);}await page.locator('#language').selectOption('en');}
   if((width===1440||width===390)){await shot(page,engine+'-'+width+'-'+(route==='/'?'home':route.split('/')[1]));}
