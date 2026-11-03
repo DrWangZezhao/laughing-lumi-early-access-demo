@@ -1,0 +1,7 @@
+import test from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import {readFile} from 'node:fs/promises';
+test('mascot keeps the current decoded image through delayed, stale and failed pose requests',async()=>{
+ const source=await readFile(new URL('../js/lumi.js',import.meta.url),'utf8'),fragment=source.slice(source.indexOf('// Decode a requested pose'),source.indexOf('function clearSpeech'));
+ const images=[];class ImageMock{constructor(){this.complete=false;this.naturalWidth=0;this.ready=new Promise((resolve,reject)=>{this.finish=()=>{this.complete=true;this.naturalWidth=100;resolve()};this.fail=reject});images.push(this)}decode(){return this.ready}}
+ const sprite={src:'book.png',dataset:{pose:'book'}},context={sprite,Image:ImageMock,ASSETS:{book:'book.png',stand:'stand.png',peek:'peek.png'}};vm.createContext(context);vm.runInContext(fragment,context);
+ context.setPose('stand');assert.equal(sprite.src,'book.png');context.setPose('peek');images.find(i=>i.src==='stand.png').finish();await Promise.resolve();assert.equal(sprite.src,'book.png','stale completion replaced a newer requested pose');images.find(i=>i.src==='peek.png').finish();await Promise.resolve();assert.equal(sprite.src,'peek.png');context.setPose('book');images.find(i=>i.src==='book.png').fail(Error('Delayed image failed'));await Promise.resolve();await Promise.resolve();assert.equal(sprite.src,'peek.png','failed request blanked the current image');assert.equal(images.length,3);
+});

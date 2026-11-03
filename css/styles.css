@@ -116,3 +116,9 @@ footer{padding:25px 0 38px;border-top:1px solid #e2e8e8;color:#78909a;font-size:
 [hidden]{display:none!important}.team-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr))}.profile{text-align:center}.portrait{width:88px;height:88px;margin:0 auto 20px;border-radius:50%;display:grid;place-items:center;background:var(--yellow);color:var(--ink);font-size:28px;font-weight:700}.profile a{text-decoration:underline}.profile h3{font-size:22px}.ctas{flex-wrap:wrap}
 /* Keep signup controls clickable when the draggable mascot crosses the form. */
 #signup .form{position:relative;z-index:33}
+
+.ecosystem-nav{display:flex;gap:20px;font-size:12px;color:var(--blue)}
+
+.lang button{min-width:44px;min-height:44px}.sitebar{padding-top:env(safe-area-inset-top)}input[type=email]{font-size:16px}.ecosystem-nav a{min-height:44px;display:inline-flex;align-items:center}
+/* Keep the four website destinations available on touch screens as well. */
+@media(max-width:1050px){.nav{flex-wrap:wrap}.links{display:flex;order:3;width:100%;justify-content:space-between;gap:8px;flex-wrap:wrap}.links a{display:inline-flex;align-items:center;min-height:44px}}

@@ -1,1 +1,15 @@
-{"name":"laughing-lumi-early-access-demo","private":true,"type":"module","scripts":{"test":"node --test tests/*.test.js","build":"node scripts/build.js"}}
+{
+  "name": "laughing-lumi-early-access-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "build": "node scripts/build.js && node scripts/verify-build.mjs",
+    "test:browser": "node scripts/browser-qa.mjs",
+    "build:staging": "node scripts/build-staging.js && node scripts/verify-build.mjs",
+    "test:motion": "node scripts/interaction-smoke.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}
