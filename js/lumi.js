@@ -13,7 +13,14 @@ const stagePoses={hero:'book',story:'wave',why:'stand',form:'stand',team:'book'}
 const actorWidth=(name)=>(innerWidth<761||innerHeight<560)?(innerWidth>innerHeight ? 88 : (name==='hero'?111:name==='form'?94:105)):(name==='hero'?250:185);
 let manualPlacement=false,userMoved=false,drag=null,scrollQuietUntil=0,poseOnArrival=null,lastUserScroll=0;
 function tr(key){return (I18N[lang]&&I18N[lang][key])||I18N.en[key]||key}
-function setPose(pose){if(sprite.dataset.pose!==pose){sprite.src=ASSETS[pose];sprite.dataset.pose=pose;}}
+// Decode a requested pose before swapping it in; keep the current image during loading.
+const poseImages=Object.fromEntries(Object.entries(ASSETS).map(([pose,src])=>{const image=new Image();image.src=src;return [pose,image]}));
+let requestedPose=null;
+function setPose(pose){
+ requestedPose=pose;const image=poseImages[pose];if(!image||sprite.dataset.pose===pose)return;
+ const apply=()=>{if(requestedPose===pose){sprite.src=image.src;sprite.dataset.pose=pose;}};
+ if(image.complete&&image.naturalWidth)apply();else image.decode().then(apply).catch(()=>{});
+}
 function clearSpeech(){clearInterval(dialogTimer);bubble.classList.remove('show');bubble.textContent=''}
 function talk(key,immediate=false){speechKey=key;clearInterval(dialogTimer);bubble.classList.add('show');const txt=tr(key);if(immediate||prefersReduced){bubble.textContent=txt;return;}bubble.textContent='';const chars=Array.from(txt);let index=0;dialogTimer=setInterval(()=>{index=Math.min(index+2,chars.length);bubble.textContent=chars.slice(0,index).join('');if(index>=chars.length)clearInterval(dialogTimer)},23)}
 function limit(n,lo,hi){return Math.max(lo,Math.min(hi,n))}
