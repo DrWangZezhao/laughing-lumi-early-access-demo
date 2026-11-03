@@ -1,4 +1,6 @@
-# Investor experience — review candidate, 3 November 2026
+# Investor experience — initial review candidate, 3 November 2026
+
+This file records the initial implementation pass. Current browser, staging and release status is in RELEASE-REVIEW.md.
 
 Developed on `feature/investor-opportunity` from main `6cba85d8405f43568cc6e38bfc291059ce555734`. No main push, live website deployment, collection-endpoint change, cloud credential change or DNS change was performed.
 

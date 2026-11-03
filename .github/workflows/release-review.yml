@@ -25,6 +25,7 @@ jobs:
           REVIEW_SERVER_PID=$!
           trap 'kill "$REVIEW_SERVER_PID"' EXIT
           node scripts/browser-qa.mjs
+          node scripts/interaction-smoke.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
