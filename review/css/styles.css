@@ -124,3 +124,5 @@ footer{padding:25px 0 38px;border-top:1px solid #e2e8e8;color:#78909a;font-size:
 @media(max-width:1050px){.nav{flex-wrap:wrap}.links{display:flex;order:3;width:100%;justify-content:space-between;gap:8px;flex-wrap:wrap}.links a{display:inline-flex;align-items:center;min-height:44px}}
 
 img.portrait{object-fit:cover;object-position:center;}
+
+.team-link{display:inline-block;margin-top:12px;color:var(--blue,#21689d);font-weight:700;text-decoration:underline;text-underline-offset:4px;padding:8px 4px}.team-link:focus-visible{outline:3px solid #21689d;outline-offset:4px;border-radius:4px}
