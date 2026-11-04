@@ -1,0 +1,31 @@
+import {scenario,deliveryCost,formatMoney,formatCount,resetScenario,DEFAULTS,salesSensitivity} from './opportunity-model.js';
+import {COPY} from './opportunity-copy.js';
+const $=id=>document.getElementById(id);
+const DYNAMIC={
+ en:{gross:'Annualized gross customer billings',equiv:'Monthly gross service equivalent',cash:'Upfront annual customer receipts: ',allocated:'Allocated across 12 service months; no repeated monthly receipt.',active:' active households',simple:'25% paying conversion · 40 minutes / active home / month',review:'Enter scale overhead in Advanced assumptions',none:'Not entered',chart:'Households',net:'Net sales sensitivity'},
+ fi:{gross:'Vuositason bruttolaskutus',equiv:'Kuukauden palveluvastaava brutto',cash:'Vuositilausten ennakkomaksut: ',allocated:'Jaettu 12 palvelukuukaudelle, ei toistuvaa kuukausimaksua.',active:' aktiivista kotitaloutta',simple:'25 % maksukonversio · 40 min / aktiivinen koti / kk',review:'Syötä mittakaavakulu lisäoletuksissa',none:'Ei syötetty',chart:'Kotitaloudet',net:'Nettomyynnin herkkyys'},
+ zh:{gross:'年化客户含税账单',equiv:'每月含税服务等值',cash:'年度客户预收款：',allocated:'按 12 个服务月分配，不重复计为月度收款。',active:' 个活跃家庭',simple:'25% 付费转化 · 每活跃家庭每月 40 分钟',review:'请在高级假设输入规模成本',none:'尚未输入',chart:'家庭',net:'净销售额敏感性'},
+ sv:{gross:'Årlig bruttofakturering',equiv:'Månadens bruttoekvivalent för tjänsten',cash:'Årliga förskottsbetalningar: ',allocated:'Fördelas över tolv tjänstemånader; inga upprepade månadsbetalningar.',active:' aktiva hushåll',simple:'25 % betalande · 40 min / aktivt hem / månad',review:'Ange skalkostnad i avancerade antaganden',none:'Inte angivet',chart:'Hushåll',net:'Nettosäljskänslighet'},
+ es:{gross:'Facturación bruta anualizada',equiv:'Equivalente bruto mensual del servicio',cash:'Cobros anuales anticipados: ',allocated:'Distribuidos entre doce meses de servicio; sin cobros mensuales repetidos.',active:' hogares activos',simple:'25 % de conversión · 40 min / hogar activo / mes',review:'Introduce el coste de escala en supuestos avanzados',none:'Sin introducir',chart:'Hogares',net:'Sensibilidad de ventas netas'}
+};
+let lang='en';
+const queryLang=new URL(location.href).searchParams.get('lang');
+if(COPY[queryLang])lang=queryLang;
+else {try{const saved=localStorage.getItem('lumi-language');if(COPY[saved])lang=saved;}catch{}}
+const money=v=>formatMoney(v,lang==='zh'?'zh-CN':lang);
+const count=v=>formatCount(v,lang==='zh'?'zh-CN':lang);
+const text=(id,value)=>$(id).textContent=value;
+function read(){return {paying:Number($('paying').value),plan:document.querySelector('[name=plan]:checked').value,conversion:Number($('conversion').value)/100,minutes:Number($('minutes').value),architecture:$('architecture').value,channelFee:Number($('channel').value)/100,pose:Number($('pose').value),scaleOverhead:$('scaleOverhead').value===''?null:Number($('scaleOverhead').value)};}
+let animation;
+function animateAmount(value){cancelAnimationFrame(animation);const el=$('annualNet'),from=Number(el.dataset.value)||value;el.dataset.value=value;if(matchMedia('(prefers-reduced-motion: reduce)').matches){el.textContent=money(value);return;}let start;function tick(t){start??=t;const p=Math.min(1,(t-start)/220);el.textContent=money(from+(value-from)*(1-(1-p)**3));if(p<1)animation=requestAnimationFrame(tick);}animation=requestAnimationFrame(tick);}
+function render(){const a=read(),r=scenario(a),t=DYNAMIC[lang];text('payingValue',count(a.paying));$('paying').setAttribute('aria-valuetext',count(a.paying)+' '+COPY[lang].paying);animateAmount(r.annualNet);text('grossLabel',t.gross);text('monthlyGross',money(r.annualGross));text('contribution',money(r.contribution));text('cashNote',a.plan==='annual'?t.cash+money(r.upfrontGross)+'. '+t.allocated:'');text('simpleAssumptions',new Intl.NumberFormat(lang,{style:'percent'}).format(a.conversion)+' '+COPY[lang].conversion+' · '+count(a.minutes)+' '+COPY[lang].minutes);text('conversionValue',new Intl.NumberFormat(lang,{style:'percent'}).format(a.conversion));text('minutesValue',count(a.minutes));text('channelValue',new Intl.NumberFormat(lang,{style:'percent'}).format(a.channelFee));text('activeValue',count(r.active)+t.active);text('fixedCost',money(r.fixedAnnual));text('deliveryCost',money(r.delivery*12));text('scaleCost',r.scaleAnnual===null?t.none:money(r.scaleAnnual));text('totalCost',r.annualOperating===null?t.review:money(r.annualOperating));text('operatingResult',r.operatingResult===null?t.review:money(r.operatingResult));text('breakEven',count(r.technicalBreakEven));text('stress',money(r.annualNet-deliveryCost(r.active,a.minutes*2,a.architecture,a.pose)*12));$('scaleNotice').hidden=a.paying<100000;
+ const chart=salesSensitivity(a);$('chartLine').setAttribute('d',chart.line);$('chartArea').setAttribute('d',chart.area);$('chartDot').setAttribute('cx',chart.dot.x);$('chartDot').setAttribute('cy',chart.dot.y);text('chartEnd',money(chart.yMax));text('chartHouseholds',count(chart.xMax));text('chartTitle',t.net);text('chartDesc',COPY[lang].chartNote+' '+count(chart.xMax)+' '+t.chart+': '+money(chart.endNet));text('mobileResult',money(r.annualNet));
+}
+function translate(){document.documentElement.lang=lang==='zh'?'zh-CN':lang;for(const el of document.querySelectorAll('[data-t]'))el.textContent=COPY[lang][el.dataset.t];$('language').value=lang;document.title=COPY[lang].investors+' · Laughing Lumi';render();}
+function apply(a){$('paying').value=a.paying;document.querySelector('[name=plan][value='+a.plan+']').checked=true;$('conversion').value=a.conversion*100;$('minutes').value=a.minutes;$('architecture').value=a.architecture;$('channel').value=a.channelFee*100;$('pose').value=a.pose;$('scaleOverhead').value=a.scaleOverhead??'';render();}
+for(const id of ['paying','conversion','minutes','architecture','channel','pose','scaleOverhead'])$(id).addEventListener('input',()=>{if($('scaleOverhead').validity.valid)render();});
+for(const el of document.querySelectorAll('[name=plan]'))el.addEventListener('change',render);
+$('resetScenario').addEventListener('click',()=>{apply(resetScenario());$('advanced').open=false;});
+$('longTerm').addEventListener('click',()=>apply({...read(),paying:500000,plan:'annual'}));
+$('language').addEventListener('change',()=>{lang=$('language').value;try{localStorage.setItem('lumi-language',lang);}catch{}translate();});
+translate();

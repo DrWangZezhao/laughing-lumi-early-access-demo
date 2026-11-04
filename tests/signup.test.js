@@ -47,7 +47,7 @@ test('redirect disabled by default; configured route respects project prefix and
 });
 test('published configuration has live collection and redirect switched off',async()=>{
  const context={window:{}};vm.runInNewContext(await readFile(new URL('../js/config.js',import.meta.url),'utf8'),context);
- assert.equal(context.window.LUMI_CONFIG.REAL_SIGNUP_ENABLED,true);
+ assert.equal(context.window.LUMI_CONFIG.REAL_SIGNUP_ENABLED,false);
  assert.equal(context.window.LUMI_CONFIG.PRIVACY_READY,true);
  assert.equal(context.window.LUMI_CONFIG.PRIVACY_NOTICE_VERSION,'public-2026-10-08');
  assert.equal(context.window.LUMI_CONFIG.SIGNUP_ENDPOINT,'https://vgeseoyoztogthygvzog.supabase.co/functions/v1/signup');

@@ -13,7 +13,14 @@ const stagePoses={hero:'book',story:'wave',why:'stand',form:'stand',team:'book'}
 const actorWidth=(name)=>(innerWidth<761||innerHeight<560)?(innerWidth>innerHeight ? 88 : (name==='hero'?111:name==='form'?94:105)):(name==='hero'?250:185);
 let manualPlacement=false,userMoved=false,drag=null,scrollQuietUntil=0,poseOnArrival=null,lastUserScroll=0;
 function tr(key){return (I18N[lang]&&I18N[lang][key])||I18N.en[key]||key}
-function setPose(pose){if(sprite.dataset.pose!==pose){sprite.src=ASSETS[pose];sprite.dataset.pose=pose;}}
+// Decode a requested pose before swapping it in; keep the current image during loading.
+const poseImages=Object.fromEntries(Object.entries(ASSETS).map(([pose,src])=>{const image=new Image();image.src=src;return [pose,image]}));
+let requestedPose=null;
+function setPose(pose){
+ requestedPose=pose;const image=poseImages[pose];if(!image||sprite.dataset.pose===pose)return;
+ const apply=()=>{if(requestedPose===pose){sprite.src=image.src;sprite.dataset.pose=pose;}};
+ if(image.complete&&image.naturalWidth)apply();else image.decode().then(apply).catch(()=>{});
+}
 function clearSpeech(){clearInterval(dialogTimer);bubble.classList.remove('show');bubble.textContent=''}
 function talk(key,immediate=false){speechKey=key;clearInterval(dialogTimer);bubble.classList.add('show');const txt=tr(key);if(immediate||prefersReduced){bubble.textContent=txt;return;}bubble.textContent='';const chars=Array.from(txt);let index=0;dialogTimer=setInterval(()=>{index=Math.min(index+2,chars.length);bubble.textContent=chars.slice(0,index).join('');if(index>=chars.length)clearInterval(dialogTimer)},23)}
 function limit(n,lo,hi){return Math.max(lo,Math.min(hi,n))}
@@ -136,4 +143,4 @@ window.addEventListener('pointerleave',()=>{pointer.x=-1000;pointer.y=-1000});
 window.addEventListener('pointerdown',e=>{pointer.x=e.clientX;pointer.y=e.clientY;pointer.down=true;pointer.downAt=performance.now();pointer.pressure=e.pressure||.5;},{passive:true});
 window.addEventListener('pointerup',e=>{const dur=performance.now()-pointer.downAt;const strength=dur>300||pointer.pressure>.7?65:34; const radius=250;for(const g of letters){const dx=g.cx-e.clientX,dy=g.cy-e.clientY,dist=Math.hypot(dx,dy);if(dist<radius){const f=Math.pow(1-dist/radius,1.6);g.vx+=(dx/(dist||1))*strength*f*(.7+Math.random()*.6);g.vy+=(dy/(dist||1))*strength*f*(.7+Math.random()*.6)-4*f;g.rx+=(Math.random()-.5)*6*f;}}pointer.down=false;pointer.x=-1000;pointer.y=-1000;},{passive:true});
 let last=performance.now();function simulate(now){const dt=Math.min(1.8,(now-last)/16.67);last=now;if(!prefersReduced){for(const g of letters){const dx=g.cx-pointer.x,dy=g.cy-pointer.y,dist=Math.hypot(dx,dy);let fx=0,fy=0;if(dist<190&&dist>0){const f=(1-dist/190);fx=dx/dist*f*1.35;fy=dy/dist*f*1.35;}g.vx=(g.vx+(fx-g.x*.05)*dt)*.91;g.vy=(g.vy+(fy-g.y*.05)*dt)*.91;g.x+=g.vx*dt;g.y+=g.vy*dt;g.rx*=.92;const hover=Math.sin(now*.0014+g.phase)*2.4;g.inner.style.transform=`translate3d(${(g.x).toFixed(2)}px,${(g.y+hover).toFixed(2)}px,0) rotate(${g.rx.toFixed(2)}deg)`;}}requestAnimationFrame(simulate)}
-translate('en');positionActor('hero');actor.classList.add('visible','idle');actor.style.opacity='1';setPose('book');talk('bHero',true);requestAnimationFrame(simulate);
+translate(window.lumiInitialLanguage||'en');positionActor('hero');actor.classList.add('visible','idle');actor.style.opacity='1';setPose('book');talk('bHero',true);requestAnimationFrame(simulate);
