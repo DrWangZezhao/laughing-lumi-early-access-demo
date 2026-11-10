@@ -1,0 +1,170 @@
+/* Layout follows the Figma mockups (834x1194 design px, iPad portrait) and the
+   RectTransforms in SampleScene.unity (scene units are 2x design px). */
+:root {
+  --dark: #1b74cf;      /* Color-DarkBlue  (0.106, 0.455, 0.812) */
+  --light: #dbe4ff;     /* Color-LightBlue (0.859, 0.894, 1.0) */
+  --border: #76ace2;    /* Color-ActivityBorder */
+  --bar: 52px;          /* debug text input strip (IMGUI: 32px + 10px margins) */
+  --s: calc(min(100vw, (100dvh - var(--bar)) * 834 / 1194) / 834);
+  --font: ui-rounded, "SF Pro Rounded", "Arial Rounded MT Bold", "Nunito", "Varela Round", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--light); overflow: hidden; }
+body { font-family: var(--font); -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; }
+button { font: inherit; border: 0; padding: 0; background: none; cursor: pointer; color: inherit; }
+img { display: block; -webkit-user-drag: none; user-select: none; }
+.hidden { display: none !important; }
+/* Unity Button colour-tint transition: pressed = 0.784 */
+.tint:active { filter: brightness(0.784); }
+
+#app { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; }
+#root {
+  position: relative;
+  width: calc(834 * var(--s));
+  height: calc(1194 * var(--s));
+  flex: none;
+  margin-top: max(0px, calc((100dvh - var(--bar) - 1194 * var(--s)) / 2));
+}
+
+/* ------------------------------------------------------------------ TopBar */
+#topbar { position: absolute; left: 0; right: 0; top: 0; height: calc(103.5 * var(--s)); }
+.brand { position: absolute; left: calc(26 * var(--s)); top: calc(16 * var(--s)); display: flex; align-items: center; gap: calc(6 * var(--s)); }
+.brand .logo { width: calc(72 * var(--s)); height: calc(72 * var(--s)); }
+.brand .letters { height: calc(66 * var(--s)); width: auto; }
+#viewButtons {
+  position: absolute; left: 50%; top: calc(24 * var(--s)); transform: translateX(-50%);
+  width: calc(278 * var(--s)); height: calc(60 * var(--s));
+  background: #fff; border-radius: calc(10 * var(--s));
+  display: flex; align-items: center; justify-content: space-between; padding: 0 calc(4 * var(--s));
+}
+.seg {
+  width: calc(131 * var(--s)); height: calc(52 * var(--s)); border-radius: calc(8 * var(--s));
+  background: #fff; color: var(--dark); font-size: calc(28 * var(--s)); font-weight: 700; letter-spacing: .02em;
+}
+.seg.on { background: var(--dark); color: #fff; }
+.right { position: absolute; right: calc(26 * var(--s)); top: calc(29 * var(--s)); display: flex; gap: calc(14 * var(--s)); }
+.sq { width: calc(50 * var(--s)); height: calc(50 * var(--s)); background: #fff; border-radius: calc(10 * var(--s)); display: grid; place-items: center; }
+.sq img { width: calc(38 * var(--s)); height: calc(38 * var(--s)); }
+
+/* ------------------------------------------------------------------- Frame */
+#frame {
+  position: absolute; left: calc(27 * var(--s)); right: calc(27 * var(--s));
+  top: calc(103.5 * var(--s)); bottom: calc(25.5 * var(--s));
+  border-radius: calc(32 * var(--s)); overflow: hidden; background: #c9d3f2;
+}
+#stage { position: absolute; inset: 0; background: center 35% / cover no-repeat; }
+#character {
+  position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%);
+  width: calc(330 * var(--s)); height: auto;
+  filter: drop-shadow(0 calc(4 * var(--s)) calc(10 * var(--s)) rgba(40, 60, 120, .35));
+}
+.view { position: absolute; inset: 0; pointer-events: none; }
+.view > * { pointer-events: auto; }
+.panel { position: absolute; left: 0; right: 0; bottom: 0; background: var(--dark); }
+
+/* ----------------------------------------------------------- ActivityWindow */
+#activityButtons {
+  height: calc(289 * var(--s)); padding: calc(20 * var(--s)) calc(20 * var(--s));
+  display: grid; grid-template-columns: 1fr 1fr; gap: calc(14 * var(--s)) calc(10 * var(--s)); align-content: start;
+}
+.act, .instr {
+  position: relative; display: block; width: 100%; height: calc(112 * var(--s)); text-align: left;
+  background: var(--fill, var(--dark)); border: calc(4 * var(--s)) solid var(--stroke, rgba(255,255,255,.4));
+  border-radius: calc(20 * var(--s));
+}
+.base {
+  position: absolute; left: calc(-4 * var(--s)); top: calc(-4 * var(--s)); width: calc(112 * var(--s)); height: calc(112 * var(--s));
+  background: #fff; border: calc(4 * var(--s)) solid var(--stroke, #fff); border-radius: calc(20 * var(--s));
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: calc(6 * var(--s));
+}
+.base img { width: calc(58 * var(--s)); height: calc(52 * var(--s)); object-fit: contain; }
+.base b { color: var(--c, var(--dark)); font-size: calc(22 * var(--s)); line-height: 1; }
+.txt {
+  position: absolute; left: calc(124 * var(--s)); right: calc(12 * var(--s)); top: calc(12 * var(--s));
+  color: #fff; font-size: calc(19 * var(--s)); line-height: 1.2; font-weight: 600;
+}
+
+#activityInstruction { height: calc(318 * var(--s)); padding: calc(18 * var(--s)) calc(20 * var(--s)); }
+.instr {
+  height: calc(112 * var(--s)); border: calc(2 * var(--s)) solid var(--border); background: var(--dark); cursor: default;
+}
+.instr .base { background: #fff; border-radius: calc(18 * var(--s)); top: -1px; bottom: -1px; left: -1px; }
+.instr .txt { left: calc(128 * var(--s)); font-size: calc(19 * var(--s)); }
+.round {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  width: calc(146 * var(--s)); height: calc(146 * var(--s)); border-radius: 50%; background: #fff;
+  display: grid; place-items: center;
+}
+#startActivityButton { bottom: calc(20 * var(--s)); }
+#startActivityButton img { width: calc(76 * var(--s)); height: auto; }
+
+/* --------------------------------------------------------- AICompanionWindow */
+#debugBG {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  width: min(calc(800 * var(--s)), calc(100% - 20 * var(--s)));
+  height: calc(200 * var(--s)); bottom: calc(272 * var(--s));
+  background: rgba(0, 0, 0, .502); padding: calc(8 * var(--s)); overflow: auto;
+}
+#debugTranscript { color: #fff; font-size: calc(20 * var(--s)); line-height: 1.25; white-space: pre-wrap; }
+#bottomInteractionButtons { position: absolute; inset: auto 0 0 0; height: calc(240 * var(--s)); pointer-events: none; }
+#bottomInteractionButtons > * { pointer-events: auto; }
+.talk {
+  position: absolute; left: 50%; bottom: calc(28 * var(--s)); transform: translateX(-50%);
+  width: calc(176 * var(--s)); height: calc(176 * var(--s)); border-radius: 50%; background: #fff;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: calc(4 * var(--s));
+  color: var(--dark); font-size: calc(36 * var(--s)); font-weight: 800; letter-spacing: .03em;
+}
+.talk img { height: calc(84 * var(--s)); width: auto; }
+.type {
+  position: absolute; left: calc(20 * var(--s)); bottom: calc(20 * var(--s));
+  width: calc(113 * var(--s)); height: calc(71 * var(--s)); border-radius: calc(14 * var(--s)); background: #fff;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: calc(6 * var(--s));
+  color: var(--dark); font-size: calc(15 * var(--s)); font-weight: 700;
+}
+.type img { width: calc(50 * var(--s)); height: auto; }
+#bottomInteractionMicrophone { height: calc(252 * var(--s)); }
+.listening {
+  position: absolute; left: 0; right: 0; top: calc(26 * var(--s)); text-align: center;
+  color: #fff; font-size: calc(26 * var(--s)); font-weight: 700; letter-spacing: .04em;
+}
+#stopButton { top: calc(70 * var(--s)); width: calc(117 * var(--s)); height: calc(117 * var(--s)); animation: pulse 1.6s ease-in-out infinite; }
+#stopButton img { height: calc(64 * var(--s)); width: auto; }
+@keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(255,255,255,.45); } 50% { box-shadow: 0 0 0 calc(10 * var(--s)) rgba(255,255,255,0); } }
+.stoptext {
+  position: absolute; left: 0; right: 0; bottom: calc(18 * var(--s)); text-align: center;
+  color: #fff; font-size: calc(17 * var(--s)); font-weight: 700; letter-spacing: .03em;
+}
+
+/* ------------------------------------------------- debug text input (IMGUI) */
+#debugInput {
+  position: fixed; left: 10px; right: 10px; bottom: calc(10px + env(safe-area-inset-bottom));
+  height: 32px; display: flex; gap: 4px;
+}
+#debugInput input {
+  flex: 1; min-width: 0; height: 32px; border: 1px solid #9aa6c7; border-radius: 4px; padding: 0 8px;
+  font: 16px system-ui, sans-serif; background: #fff; color: #222;
+}
+#debugInput button { width: 80px; height: 32px; border-radius: 4px; background: #e6e6e6; border: 1px solid #9aa6c7; font: 15px system-ui, sans-serif; color: #222; }
+#debugHint {
+  position: fixed; left: 10px; right: 10px; bottom: calc(48px + env(safe-area-inset-bottom));
+  font: 13px system-ui, sans-serif; color: #7a1f1f; background: #fff3f3; border: 1px solid #e3b4b4; border-radius: 4px; padding: 4px 8px;
+}
+
+/* --------------------------------------------- phones (portrait, narrow) */
+@media (max-width: 600px) {
+  :root { --s: calc(100vw / 470); }
+  #root { width: 100vw; height: calc(100dvh - var(--bar) - env(safe-area-inset-bottom)); margin-top: env(safe-area-inset-top); }
+  #topbar { height: calc(96 * var(--s)); }
+  .brand { left: calc(14 * var(--s)); top: calc(18 * var(--s)); }
+  .brand .logo { width: calc(60 * var(--s)); height: calc(60 * var(--s)); }
+  .brand .letters { display: none; }
+  #viewButtons { left: calc(86 * var(--s)); transform: none; top: calc(18 * var(--s)); width: calc(250 * var(--s)); }
+  .seg { width: calc(118 * var(--s)); font-size: calc(26 * var(--s)); }
+  .right { right: calc(14 * var(--s)); top: calc(23 * var(--s)); gap: calc(8 * var(--s)); }
+  #frame { left: calc(12 * var(--s)); right: calc(12 * var(--s)); top: calc(96 * var(--s)); bottom: calc(8 * var(--s)); border-radius: calc(26 * var(--s)); }
+  #activityButtons { height: auto; grid-template-columns: 1fr; padding: calc(14 * var(--s)); gap: calc(10 * var(--s)); }
+
+  .txt { font-size: calc(20 * var(--s)); left: calc(118 * var(--s)); }
+  #character { top: 26%; width: calc(250 * var(--s)); }
+  #debugBG { bottom: calc(250 * var(--s)); height: calc(170 * var(--s)); }
+}
