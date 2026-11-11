@@ -6,6 +6,8 @@ export type CameraStatus = 'idle' | 'starting' | 'ready' | 'denied' | 'unavailab
 export class CameraController {
   private stream: MediaStream | null = null;
   private running = false;
+  private starting = false;
+  private generation = 0;
   private loopTimer: number | null = null;
   private readonly pipeline = new PosePipeline();
   private readonly onLandmarks: (landmarks: Landmark[]) => void;
@@ -23,36 +25,42 @@ export class CameraController {
   get active(): boolean { return this.running; }
 
   async start(): Promise<void> {
-    if (this.running) return;
+    if (this.running || this.starting) return;
     if (!navigator.mediaDevices?.getUserMedia) {
       this.onStatus('unavailable', 'This browser cannot use the camera. You can continue in manual mode (unverified).');
       return;
     }
+    this.starting = true;
+    const generation = ++this.generation;
     this.onStatus('starting');
     try {
-      this.stream = await navigator.mediaDevices.getUserMedia({
+      const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false,
       });
+      if (generation !== this.generation) { stream.getTracks().forEach((track) => track.stop()); return; }
+      this.stream = stream;
       this.video.srcObject = this.stream;
       await this.video.play();
       await this.pipeline.init();
+      if (generation !== this.generation) return;
       this.running = true;
       this.onStatus('ready');
       this.loop();
     } catch (error) {
+      if (generation !== this.generation) return;
       this.stop();
       const name = (error as { name?: string }).name;
       if (name === 'NotAllowedError' || name === 'SecurityError') this.onStatus('denied', 'Camera access was denied. Manual mode is available, but movement is unverified.');
       else if (name === 'NotFoundError') this.onStatus('unavailable', 'No camera was found. Manual mode is available, but movement is unverified.');
       else this.onStatus('model-unavailable', 'The local movement model could not start. Manual mode is available, but movement is unverified.');
-    }
+    } finally { if (generation === this.generation) this.starting = false; }
   }
 
   private loop(): void {
     if (!this.running) return;
     try {
       const result = this.pipeline.detect(this.video);
-      if (result?.landmarks[0]) this.onLandmarks(result.landmarks[0]);
+      if (result) this.onLandmarks(result.landmarks[0] ?? []);
     } catch {
       this.stop(false);
       this.onStatus('model-unavailable', 'Movement checking paused. Manual mode is available, but movement is unverified.');
@@ -62,6 +70,8 @@ export class CameraController {
   }
 
   stop(notify = true): void {
+    this.generation += 1;
+    this.starting = false;
     this.running = false;
     if (this.loopTimer != null) window.clearTimeout(this.loopTimer);
     this.loopTimer = null;

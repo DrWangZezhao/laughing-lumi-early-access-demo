@@ -31,14 +31,49 @@ test('all five valid gestures require meaningful temporal or geometric evidence'
     } else if (action.id === 'snowflake') {
       for (let i = 0; i < 7; i++) detector.update(pose({ leftElbow: { x: .18, y: .4 }, rightElbow: { x: .82, y: .4 } }));
     } else if (action.id === 'sway') {
-      for (const x of [.43, .57, .43, .57]) detector.update(pose({ leftShoulder: { x: x - .1, y: .4 }, rightShoulder: { x: x + .1, y: .4 }, leftHip: { x: x - .07, y: .65 }, rightHip: { x: x + .07, y: .65 } }));
+      for (const x of [.43, .57, .43, .57]) detector.update(pose({ leftShoulder: { x: x - .1, y: .4 }, rightShoulder: { x: x + .1, y: .4 } }));
     } else {
       for (let i = 0; i < 7; i++) detector.update(pose({ leftWrist: { x: .46, y: .18 }, rightWrist: { x: .54, y: .18 } }));
     }
     assert.equal(detector.update(pose()).status, 'not-detected');
     detector.reset();
-    assert.equal(detector.update([]).status, 'camera-unavailable');
+    assert.equal(detector.update().status, 'camera-unavailable');
+    assert.equal(detector.update([]).status, 'not-detected');
   }
+});
+
+test('wave uses shoulder-relative motion and discards motion history when the hand disappears', () => {
+  const detector = createActionDetector('wave');
+  const frame = (wristX, shift = 0) => pose({
+    leftShoulder: { x: .4 + shift }, rightShoulder: { x: .6 + shift },
+    leftWrist: { x: wristX + shift, y: .18 }, rightWrist: { x: .7 + shift },
+  });
+  for (const shift of [0, .04, .08, .12, .08, .04, 0, -.04, -.08]) {
+    assert.equal(detector.update(frame(.2, shift)).detected, false);
+  }
+  for (const x of [.2, .3, .4, .5, .4, .3, .2]) assert.equal(detector.update(frame(x)).detected, false);
+  detector.update([]);
+  for (const x of [.2, .3, .4, .5]) assert.equal(detector.update(frame(x)).detected, false);
+  let detected = false;
+  for (const x of [.4, .3, .2, .3, .4, .5, .4, .3, .2]) detected ||= detector.update(frame(x)).detected;
+  assert.equal(detected, true);
+});
+
+test('sway requires torso motion relative to hips, not whole-body camera motion', () => {
+  const detector = createActionDetector('sway');
+  const frame = (torsoShift, cameraShift = 0) => pose({
+    leftShoulder: { x: .4 + torsoShift + cameraShift },
+    rightShoulder: { x: .6 + torsoShift + cameraShift },
+    leftHip: { x: .43 + cameraShift }, rightHip: { x: .57 + cameraShift },
+  });
+  for (const shift of [0, .04, .08, .12, .08, .04, 0, -.04, -.08]) {
+    assert.equal(detector.update(frame(0, shift)).detected, false);
+  }
+  let detected = false;
+  for (const shift of [0, .04, .08, .12, .08, .04, 0, -.04, -.08, -.04, 0, .04, .08]) {
+    detected ||= detector.update(frame(shift)).detected;
+  }
+  assert.equal(detected, true);
 });
 
 test('wave detector rejects a stationary raised hand and low-confidence landmarks', () => {

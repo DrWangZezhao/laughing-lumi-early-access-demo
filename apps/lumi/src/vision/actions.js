@@ -19,6 +19,10 @@ const DEFAULTS = Object.freeze({
   confirmFrames: 6,
   cooldownFrames: 18,
   historyFrames: 48,
+  smoothing: 0.4,
+  motionThreshold: 0.07,
+  waveRange: 0.75,
+  swayRange: 0.32,
 });
 
 const point = (landmarks, index) => landmarks?.[index];
@@ -42,6 +46,36 @@ function resetState(state) {
   state.direction = 0;
   state.changes = 0;
   state.range = 0;
+  state.hand = null;
+  state.smoothed = null;
+}
+
+function motion(state, position, options, requiredRange) {
+  state.smoothed = state.smoothed == null ? position
+    : state.smoothed + options.smoothing * (position - state.smoothed);
+  if (state.last != null) {
+    const delta = state.smoothed - state.last;
+    const direction = Math.abs(delta) >= options.motionThreshold ? Math.sign(delta) : 0;
+    if (direction && state.direction && direction !== state.direction) state.changes += 1;
+    if (direction) state.direction = direction;
+  }
+  state.last = state.smoothed;
+  state.history.push(state.smoothed);
+  if (state.history.length > options.historyFrames) state.history.shift();
+  state.range = Math.max(...state.history) - Math.min(...state.history);
+  const detected = state.changes >= 2 && state.range >= requiredRange;
+  const progress = Math.min(1, (state.changes / 2 + state.range / requiredRange) / 2);
+  if (detected) {
+    state.cooldown = options.cooldownFrames;
+    state.frames = 0;
+    state.history = [];
+    state.last = null;
+    state.smoothed = null;
+    state.direction = 0;
+    state.changes = 0;
+    state.range = 0;
+  }
+  return { valid: true, progress, detected };
 }
 
 function confirmation(state, condition, options) {
@@ -57,28 +91,18 @@ function confirmation(state, condition, options) {
 
 function wave(state, landmarks, options) {
   if (state.cooldown > 0) { state.cooldown -= 1; return { valid: true, progress: 0, detected: false }; }
-  const needed = [I.leftShoulder, I.rightShoulder, I.leftWrist, I.rightWrist];
+  const needed = [I.leftShoulder, I.rightShoulder];
   if (!required(landmarks, needed, options.minVisibility)) return { valid: false, progress: 0 };
   const scale = scaleFor(landmarks);
   const shoulders = [point(landmarks, I.leftShoulder), point(landmarks, I.rightShoulder)];
   const wrists = [point(landmarks, I.leftWrist), point(landmarks, I.rightWrist)];
-  const hand = wrists[0].y < shoulders[0].y - scale * 0.08 ? wrists[0]
-    : wrists[1].y < shoulders[1].y - scale * 0.08 ? wrists[1] : null;
-  if (!hand) { state.last = null; state.direction = 0; state.changes = 0; state.range = 0; return { valid: true, progress: 0 }; }
-  if (state.last != null) {
-    const delta = hand.x - state.last;
-    const direction = Math.abs(delta) > scale * 0.045 ? Math.sign(delta) : 0;
-    if (direction && state.direction && direction !== state.direction) state.changes += 1;
-    if (direction) state.direction = direction;
-    state.range = Math.max(state.range, Math.abs(hand.x - state.last));
-  }
-  state.last = hand.x;
-  state.history.push(hand.x);
-  if (state.history.length > options.historyFrames) state.history.shift();
-  const span = Math.max(...state.history) - Math.min(...state.history);
-  const detected = state.changes >= 2 && Math.max(state.range, span) > scale * 0.22;
-  if (detected) { state.cooldown = options.cooldownFrames; state.changes = 0; state.history = []; }
-  return { valid: true, progress: Math.min(1, (state.changes + span / (scale * 0.22)) / 3), detected };
+  const raised = [0, 1].filter((side) => visible(wrists[side], options.minVisibility)
+    && wrists[side].y < shoulders[side].y - scale * 0.12);
+  if (!raised.length) { resetState(state); return { valid: true, progress: 0 }; }
+  const side = raised.includes(state.hand) ? state.hand : raised[0];
+  if (state.hand !== side) resetState(state);
+  state.hand = side;
+  return motion(state, (wrists[side].x - shoulders[side].x) / scale, options, options.waveRange);
 }
 
 function handsUp(state, landmarks, options) {
@@ -86,7 +110,8 @@ function handsUp(state, landmarks, options) {
   if (!required(landmarks, needed, options.minVisibility)) return { valid: false, progress: 0 };
   const ls = point(landmarks, I.leftShoulder), rs = point(landmarks, I.rightShoulder);
   const lw = point(landmarks, I.leftWrist), rw = point(landmarks, I.rightWrist);
-  const condition = lw.y < ls.y - 0.04 && rw.y < rs.y - 0.04;
+  const scale = scaleFor(landmarks);
+  const condition = lw.y < ls.y - scale * 0.2 && rw.y < rs.y - scale * 0.2;
   const detected = confirmation(state, condition, options);
   return { valid: true, progress: Math.min(1, state.frames / options.confirmFrames), detected };
 }
@@ -99,7 +124,8 @@ function snowflake(state, landmarks, options) {
   const leftDx = ls.x - le.x, rightDx = re.x - rs.x;
   const horizontal = Math.abs(le.y - ls.y) < Math.abs(leftDx) * 0.75
     && Math.abs(re.y - rs.y) < Math.abs(rightDx) * 0.75;
-  const condition = leftDx > 0.12 && rightDx > 0.12 && horizontal;
+  const scale = scaleFor(landmarks);
+  const condition = leftDx > scale * 0.6 && rightDx > scale * 0.6 && horizontal;
   const detected = confirmation(state, condition, options);
   return { valid: true, progress: Math.min(1, state.frames / options.confirmFrames), detected };
 }
@@ -110,22 +136,10 @@ function sway(state, landmarks, options) {
   if (!required(landmarks, needed, options.minVisibility)) return { valid: false, progress: 0 };
   const ls = point(landmarks, I.leftShoulder), rs = point(landmarks, I.rightShoulder);
   const lh = point(landmarks, I.leftHip), rh = point(landmarks, I.rightHip);
-  const x = (ls.x + rs.x + lh.x + rh.x) / 4;
   const scale = scaleFor(landmarks);
-  if (state.last != null) {
-    const delta = x - state.last;
-    const direction = Math.abs(delta) > scale * 0.035 ? Math.sign(delta) : 0;
-    if (direction && state.direction && direction !== state.direction) state.changes += 1;
-    if (direction) state.direction = direction;
-    state.history.push(x);
-    if (state.history.length > options.historyFrames) state.history.shift();
-  }
-  state.last = x;
-  const span = state.history.length ? Math.max(...state.history) - Math.min(...state.history) : 0;
-  state.range = Math.max(state.range, span);
-  const detected = state.changes >= 2 && state.range > scale * 0.18;
-  if (detected) { state.cooldown = options.cooldownFrames; state.changes = 0; state.history = []; state.range = 0; }
-  return { valid: true, progress: Math.min(1, (state.changes + state.range / (scale * 0.18)) / 3), detected };
+  const shoulderCenter = (ls.x + rs.x) / 2;
+  const hipCenter = (lh.x + rh.x) / 2;
+  return motion(state, (shoulderCenter - hipCenter) / scale, options, options.swayRange);
 }
 
 function headTouch(state, landmarks, options) {
@@ -150,9 +164,10 @@ export function createActionDetector(actionId, overrides = {}) {
   return {
     reset() { resetState(state); },
     update(landmarks) {
-      if (!Array.isArray(landmarks) || landmarks.length < 25) return { status: 'camera-unavailable', progress: 0, detected: false };
+      if (!Array.isArray(landmarks)) { resetState(state); return { status: 'camera-unavailable', progress: 0, detected: false }; }
+      if (landmarks.length < 25) { resetState(state); return { status: 'not-detected', progress: 0, detected: false }; }
       const result = detectors[actionId](state, landmarks, options);
-      if (!result.valid) return { status: 'not-detected', progress: 0, detected: false };
+      if (!result.valid) { resetState(state); return { status: 'not-detected', progress: 0, detected: false }; }
       return { status: result.detected ? 'detected' : 'not-detected', progress: result.progress || 0, detected: Boolean(result.detected) };
     },
   };

@@ -1,4 +1,5 @@
 import { access, readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 
 const routes = ['demo', 'team-demo'];
 const poses = [
@@ -32,6 +33,14 @@ for (const route of routes) {
 
   for (const asset of [...runtimeAssets, ...poses.map((pose) => `character/${pose}`)]) {
     await access(`dist/${route}/${asset}`);
+  }
+  for (const pose of poses) {
+    const original = await readFile(`assets/${pose}`);
+    const published = await readFile(`dist/${route}/character/${pose}`);
+    const digest = (data) => createHash('sha256').update(data).digest('hex');
+    if (digest(original) !== digest(published)) {
+      throw new Error(`dist/${route}/character/${pose} differs from the approved original`);
+    }
   }
 
   for (const reference of requiredReferences) {

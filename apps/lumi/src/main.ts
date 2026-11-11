@@ -34,6 +34,7 @@ let currentAction = 0;
 let actionTimer: number | undefined;
 let actionDetector = createActionDetector(ACTIONS[0].id);
 let accessToken = sessionStorage.getItem('lumi_internal_access_token') || '';
+let internalAuthorized = false;
 let conversation: VoiceConversation | null = null;
 let connecting = false;
 let sessionId = 0;
@@ -46,6 +47,7 @@ const camera = new CameraController(el.cameraPreview, (landmarks) => {
   const result = actionDetector.update(landmarks);
   if (result.status === 'camera-unavailable') return;
   el.activityProgress.style.width = `${Math.round(result.progress * 100)}%`;
+  el.activityFeedback.textContent = landmarks.length ? 'Camera on · checking locally' : 'No person in frame · move into view';
   if (result.progress > 0 && !result.detected) setCharacter('moving');
   if (result.detected) acknowledgeAction(true);
 }, (status, message) => updateCameraStatus(status, message));
@@ -110,6 +112,7 @@ function acknowledgeAction(verified: boolean) {
 
 function beginTrial() {
   if (IS_INTERNAL) {
+    if (!internalAuthorized) { show(el.internalGate, true); return; }
     trialActive = true; trialEnded = false; el.sessionLabel.textContent = 'TEAM DEMO'; el.countdown.textContent = '—'; show(el.sessionBar, true);
   } else {
     if (clock.started && !clock.expired) return;
@@ -127,7 +130,7 @@ function endTrial(expired = false) {
 }
 
 async function requestSignedUrl(scope: 'public' | 'internal'): Promise<string> {
-  if (scope === 'internal' && !accessToken) throw new Error('Internal sign-in required.');
+  if (scope === 'internal' && (!internalAuthorized || !accessToken)) throw new Error('Internal sign-in required.');
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (scope === 'internal') headers.Authorization = `Bearer ${accessToken}`;
   const response = await fetch(VOICE_ENDPOINT, { method: 'POST', headers, body: JSON.stringify({ scope }) });
@@ -179,10 +182,29 @@ async function requestMagicLink(email: string) {
 
 function handleAuthHash() { const params = new URLSearchParams(window.location.hash.replace(/^#/, '')); const token = params.get('access_token'); if (token) { accessToken = token; sessionStorage.setItem('lumi_internal_access_token', token); history.replaceState(null, '', window.location.pathname); } }
 
-function bootInternal() {
+async function bootInternal() {
   handleAuthHash();
   if (!IS_INTERNAL) return;
-  if (accessToken) { show(el.internalGate, false); beginTrial(); } else { show(el.internalGate, true); el.internalLoginStatus.textContent = DEMO_CONFIG.supabaseAnonKey ? '' : 'Internal access is unavailable until Supabase Auth is configured.'; }
+  show(el.internalGate, true);
+  if (!DEMO_CONFIG.supabaseUrl || !DEMO_CONFIG.supabaseAnonKey) {
+    el.internalLoginStatus.textContent = 'Internal access is unavailable until Supabase Auth is configured.';
+    return;
+  }
+  if (!accessToken) return;
+  el.internalLoginStatus.textContent = 'Verifying sign-in…';
+  try {
+    const response = await fetch(`${DEMO_CONFIG.supabaseUrl}/auth/v1/user`, {
+      headers: { apikey: DEMO_CONFIG.supabaseAnonKey, Authorization: `Bearer ${accessToken}` },
+    });
+    if (!response.ok) throw new Error('Sign-in has expired. Request a new link.');
+    internalAuthorized = true;
+    show(el.internalGate, false);
+    beginTrial();
+  } catch {
+    accessToken = '';
+    sessionStorage.removeItem('lumi_internal_access_token');
+    el.internalLoginStatus.textContent = 'Sign-in could not be verified. Request a new link.';
+  }
 }
 
 el.playButton.addEventListener('click', openPlayView); el.lumiButton.addEventListener('click', openLumiView); el.startDemoButton.addEventListener('click', beginTrial); el.stopDemoButton.addEventListener('click', () => endTrial(false));
@@ -192,9 +214,9 @@ el.talkButton.addEventListener('click', () => void startConversation()); el.stop
 el.debugInput.addEventListener('submit', (event) => { event.preventDefault(); sendTextMessage(el.debugText.value); el.debugText.value = ''; });
 el.closeCompletionButton.addEventListener('click', () => { show(el.completionDialog, false); show(el.welcomePanel, true); show(el.activityButtons, false); }); el.restartDemoButton.addEventListener('click', () => { show(el.completionDialog, false); beginTrial(); });
 el.internalLoginForm.addEventListener('submit', async (event) => { event.preventDefault(); el.internalLoginStatus.textContent = 'Sending sign-in link…'; try { await requestMagicLink(el.internalEmail.value.trim()); el.internalLoginStatus.textContent = 'Check your email for the one-time sign-in link.'; } catch (error) { el.internalLoginStatus.textContent = describeFailure(error); } });
-el.internalLogoutButton.addEventListener('click', () => { accessToken = ''; sessionStorage.removeItem('lumi_internal_access_token'); endTrial(false); show(el.internalGate, true); });
+el.internalLogoutButton.addEventListener('click', () => { accessToken = ''; internalAuthorized = false; sessionStorage.removeItem('lumi_internal_access_token'); endTrial(false); show(el.internalGate, true); });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { endConversation(); camera.stop(); } else if (!IS_INTERNAL) clock.reconcile(); });
 window.addEventListener('pagehide', () => { endConversation(); camera.dispose(); });
 
-openPlayView(); bootInternal();
+openPlayView(); void bootInternal();
 (window as unknown as { lumi: object }).lumi = { get connected() { return Boolean(conversation); }, get mode() { return viewMode; }, get trialActive() { return trialActive; }, get trialEnded() { return trialEnded; }, get internal() { return IS_INTERNAL; }, startDemo: beginTrial, stopDemo: () => endTrial(false) };
