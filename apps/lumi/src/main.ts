@@ -7,7 +7,7 @@ import { createSessionClock } from './session.js';
 const IS_INTERNAL = /\/team-demo\/?$/u.test(window.location.pathname);
 const SURVEY_URL = 'https://script.google.com/macros/s/AKfycbzhraBB4vfYdVVjBPNGkVEjB6rZ4o1G1FVc2nlwrHprgm5ZehF2f0isWVlquAwJrT9LlA/exec?src=homepage';
 const DEMO_CONFIG = (window as unknown as { LUMI_DEMO_CONFIG?: { voiceEndpoint?: string } }).LUMI_DEMO_CONFIG ?? {};
-const VOICE_ENDPOINT = DEMO_CONFIG.voiceEndpoint || 'https://vgeseoyoztogthygvzog.supabase.co/functions/v1/voice-session';
+const VOICE_ENDPOINT = DEMO_CONFIG.voiceEndpoint?.trim() || '';
 const CONNECT_TIMEOUT_MS = 20000;
 const UNMUTE_DELAY_MS = 400;
 const QUOTA_MSG = 'Voice unavailable right now. Please try again later.';
@@ -20,6 +20,7 @@ const el = {
   sessionBar: $('sessionBar'), sessionLabel: $('sessionLabel'), countdown: $('countdown'), character: $('character') as HTMLImageElement,
   characterStatus: $('characterStatus'), cameraCard: $('cameraCard'), cameraPreview: $('cameraPreview') as HTMLVideoElement, cameraButton: $('cameraButton'), stopCameraButton: $('stopCameraButton'), cameraStatus: $('cameraStatus'), activityFeedback: $('activityFeedback'),
   activityName: $('activityName'), activityInstructionText: $('activityInstructionText'), activityProgress: $('activityProgress'), manualSuccessButton: $('manualSuccessButton'),
+  playTalkButton: $('playTalkButton'), playStopButton: $('playStopButton'), playVoiceStatus: $('playVoiceStatus'), playTranscript: $('playTranscript'),
   debugBG: $('debugBG'), debugTranscript: $('debugTranscript'), debugInput: $('debugInput') as HTMLFormElement, debugText: $('debugText') as HTMLInputElement, debugHint: $('debugHint'), bottomButtons: $('bottomInteractionButtons'), bottomMic: $('bottomInteractionMicrophone'),
   talkButton: $('talkButton'), typeButton: $('typeButton'), stopButton: $('stopButton'), completionDialog: $('completionDialog'), closeCompletionButton: $('closeCompletionButton'), restartDemoButton: $('restartDemoButton'),
 };
@@ -34,6 +35,8 @@ let actionTimer: number | undefined;
 let actionDetector = createActionDetector(ACTIONS[0].id);
 let conversation: VoiceConversation | null = null;
 let connecting = false;
+let voiceMode: 'idle' | 'listening' | 'speaking' = 'idle';
+let voiceRequest: AbortController | null = null;
 let sessionId = 0;
 let quotaExhausted = false;
 let unmuteTimer: number | undefined;
@@ -45,7 +48,7 @@ const camera = new CameraController(el.cameraPreview, (landmarks) => {
   if (result.status === 'camera-unavailable') return;
   el.activityProgress.style.width = `${Math.round(result.progress * 100)}%`;
   el.activityFeedback.textContent = landmarks.length ? 'Camera on · checking locally' : 'No person in frame · move into view';
-  if (result.progress > 0 && !result.detected) setCharacter('moving');
+  if (result.progress > 0 && !result.detected) setActivityCharacter('moving');
   if (result.detected) acknowledgeAction(true);
 }, (status, message) => updateCameraStatus(status, message));
 
@@ -65,6 +68,19 @@ function setCharacter(state: 'idle' | 'greeting' | 'listening' | 'speaking' | 'm
   el.character.className = `character is-${state}`;
 }
 
+function setActivityCharacter(state: 'idle' | 'greeting' | 'listening' | 'moving' | 'learning' | 'celebrating') {
+  if (voiceMode !== 'speaking') setCharacter(state);
+}
+
+function setVoiceStatus(message: string) { el.playVoiceStatus.textContent = message; }
+function syncVoiceControls() {
+  const active = connecting || Boolean(conversation);
+  show(el.playTalkButton, !active);
+  show(el.playStopButton, active);
+  show(el.bottomButtons, !active);
+  show(el.bottomMic, active);
+}
+
 function setToggle(mode: ViewMode) {
   const play = mode === 'Play';
   el.playButton.classList.toggle('on', play); el.lumiButton.classList.toggle('on', !play);
@@ -72,19 +88,18 @@ function setToggle(mode: ViewMode) {
 }
 
 function openPlayView() {
-  viewMode = 'Play'; setToggle('Play'); show(el.activityWindow, true); show(el.companionWindow, false); setCharacter(trialActive ? 'learning' : 'idle');
+  viewMode = 'Play'; setToggle('Play'); show(el.activityWindow, true); show(el.companionWindow, false); setCharacter(voiceMode === 'speaking' ? 'speaking' : trialActive ? 'learning' : 'idle');
 }
 
 function openLumiView() {
-  camera.stop();
-  viewMode = 'Lumi'; setToggle('Lumi'); show(el.activityWindow, false); show(el.companionWindow, true); setTranscript(''); setCharacter(conversation ? 'listening' : 'greeting');
+  viewMode = 'Lumi'; setToggle('Lumi'); show(el.activityWindow, false); show(el.companionWindow, true); setCharacter(voiceMode === 'speaking' ? 'speaking' : conversation ? 'listening' : 'greeting');
 }
 
-function setTranscript(text: string) { el.debugTranscript.textContent = text; show(el.debugBG, Boolean(text)); }
+function setTranscript(text: string) { el.debugTranscript.textContent = text; show(el.debugBG, Boolean(text)); el.playTranscript.textContent = text; show(el.playTranscript, Boolean(text)); }
 function hint(text: string) { el.debugHint.textContent = text; show(el.debugHint, Boolean(text)); window.clearTimeout(hintTimer); if (text) hintTimer = window.setTimeout(() => show(el.debugHint, false), 5000); }
 
 function updateCameraStatus(status: CameraStatus, message?: string) {
-  if (status === 'ready') { show(el.cameraCard, true); el.cameraStatus.textContent = 'Video is processed locally and is not uploaded or saved.'; el.activityFeedback.textContent = 'Camera on · checking locally'; setCharacter('listening'); return; }
+  if (status === 'ready') { show(el.cameraCard, true); el.cameraStatus.textContent = 'Video is processed locally and is not uploaded or saved.'; el.activityFeedback.textContent = 'Camera on · checking locally'; setActivityCharacter('listening'); return; }
   if (status === 'starting') { el.activityFeedback.textContent = 'Starting camera…'; return; }
   show(el.cameraCard, false);
   if (status === 'denied' || status === 'unavailable' || status === 'model-unavailable') { el.activityFeedback.textContent = 'Camera unavailable · manual mode'; hint(message || 'Camera unavailable. Movement is unverified.'); }
@@ -97,12 +112,12 @@ function chooseAction(index: number) {
   actionDetector = createActionDetector(ACTIONS[currentAction].id);
   document.querySelectorAll<HTMLButtonElement>('.act').forEach((button) => button.classList.toggle('selected', Number(button.dataset.activity) === currentAction));
   el.activityName.textContent = ACTIONS[currentAction].label; el.activityInstructionText.textContent = ACTIONS[currentAction].instruction; el.activityProgress.style.width = '0%';
-  setCharacter('learning'); el.characterStatus.textContent = `Lumi says: ${ACTIONS[currentAction].instruction}`; el.activityFeedback.textContent = camera.active ? 'Camera on · checking locally' : 'Camera off · manual mode';
+  setActivityCharacter('learning'); el.characterStatus.textContent = `Lumi says: ${ACTIONS[currentAction].instruction}`; el.activityFeedback.textContent = camera.active ? 'Camera on · checking locally' : 'Camera off · manual mode';
 }
 
 function acknowledgeAction(verified: boolean) {
   if (!trialActive || trialEnded) return;
-  setCharacter('celebrating'); el.characterStatus.textContent = verified ? 'Lumi saw it — hooray!' : 'Nice try! (unverified)'; el.activityFeedback.textContent = verified ? 'Movement detected ✓' : 'Marked complete · unverified';
+  setActivityCharacter('celebrating'); el.characterStatus.textContent = verified ? 'Lumi saw it — hooray!' : 'Nice try! (unverified)'; el.activityFeedback.textContent = verified ? 'Movement detected ✓' : 'Marked complete · unverified';
   actionDetector.reset();
   window.clearTimeout(actionTimer);
   actionTimer = window.setTimeout(() => { if (!trialActive || trialEnded) return; chooseAction((currentAction + 1) % ACTIONS.length); }, 950);
@@ -126,9 +141,9 @@ function endTrial(expired = false) {
   else { show(el.welcomePanel, true); show(el.activityButtons, false); setCharacter('idle'); el.characterStatus.textContent = 'Lumi is ready to play'; }
 }
 
-async function requestSignedUrl(): Promise<string> {
+async function requestSignedUrl(signal: AbortSignal): Promise<string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  const response = await fetch(VOICE_ENDPOINT, { method: 'POST', headers, body: JSON.stringify({ scope: 'public' }) });
+  const response = await fetch(VOICE_ENDPOINT, { method: 'POST', headers, body: JSON.stringify({ scope: 'public' }), signal });
   const data = await response.json().catch(() => ({})) as { signedUrl?: string; error?: string };
   if (!response.ok || !data.signedUrl) throw new Error(data.error || 'Voice is not configured yet.');
   return data.signedUrl;
@@ -139,40 +154,45 @@ function describeFailure(error: unknown): string {
   if (name === 'NotAllowedError' || /permission denied|not allowed/i.test(message)) return 'Microphone access was denied. You can still use text or movement play.';
   if (name === 'NotFoundError') return 'No microphone was found. You can still use text or movement play.';
   if (/quota/i.test(message)) { quotaExhausted = true; return QUOTA_MSG; }
+  if (name === 'TypeError' && /fetch|network/i.test(message)) return 'Voice service is unreachable. Movement play is still available.';
   return message || 'Lumi is not available right now. Please try again later.';
 }
 
 async function startConversation() {
   if (!trialActive || trialEnded) { hint('Start the demo first.'); return; }
-  if (quotaExhausted || conversation || connecting) return;
-  if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) { hint('Voice needs a secure page and a microphone-capable browser.'); return; }
-  connecting = true; const mySession = ++sessionId; setCharacter('listening'); show(el.bottomButtons, false); show(el.bottomMic, true); setTranscript(''); hint('Connecting to Lumi…');
+  if (quotaExhausted) { setVoiceStatus(QUOTA_MSG); return; }
+  if (conversation || connecting) return;
+  if (!VOICE_ENDPOINT) { const message = 'Voice is not activated yet. Movement play is still available.'; setVoiceStatus(message); hint(message); return; }
+  if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) { const message = 'Voice needs a secure page and a microphone-capable browser.'; setVoiceStatus(message); hint(message); return; }
+  connecting = true; const mySession = ++sessionId; const request = new AbortController(); voiceRequest = request; voiceMode = 'listening'; setCharacter('listening'); syncVoiceControls(); setTranscript(''); setVoiceStatus('Connecting to Lumi…'); hint('Connecting to Lumi…');
   let timeout: number | undefined;
   try {
-    const signedUrl = await requestSignedUrl();
+    const signedUrl = await requestSignedUrl(request.signal);
+    if (voiceRequest === request) voiceRequest = null;
+    if (mySession !== sessionId || !trialActive || trialEnded) return;
     const starting = Conversation.startSession({ signedUrl, connectionType: 'websocket', libsampleratePath: new URL('./vendor/libsamplerate.worklet.js', document.baseURI).href,
-      onConnect: () => { if (mySession === sessionId) { hint(''); setCharacter('listening'); } },
+      onConnect: () => { if (mySession === sessionId) { hint(''); voiceMode = 'listening'; setVoiceStatus('Voice on · listening'); setCharacter('listening'); } },
       onMessage: (message) => { if (mySession !== sessionId) return; const role = (message as { role?: string; source?: string }).role || ((message as { source?: string }).source === 'ai' ? 'agent' : 'user'); if (role === 'agent') setTranscript((message as { message: string }).message); },
-      onModeChange: ({ mode }) => { if (mySession !== sessionId || !conversation) return; window.clearTimeout(unmuteTimer); try { if (mode === 'speaking') { conversation.setMicMuted(true); setCharacter('speaking'); } else { setCharacter('listening'); unmuteTimer = window.setTimeout(() => { try { conversation?.setMicMuted(false); } catch { /* session ended */ } }, UNMUTE_DELAY_MS); } } catch { /* session ended */ } },
-      onError: (message) => { if (mySession === sessionId) hint(describeFailure(message)); },
-      onDisconnect: (details) => { if (mySession !== sessionId) return; const wasConnected = Boolean(conversation); conversation = null; connecting = false; show(el.bottomButtons, true); show(el.bottomMic, false); if (details.reason !== 'user') setTranscript(wasConnected ? CLOSED_MSG : describeFailure(details)); setCharacter('idle'); },
+      onModeChange: ({ mode }) => { if (mySession !== sessionId || !conversation) return; window.clearTimeout(unmuteTimer); try { if (mode === 'speaking') { conversation.setMicMuted(true); voiceMode = 'speaking'; setVoiceStatus('Lumi is speaking'); setCharacter('speaking'); } else { voiceMode = 'listening'; setVoiceStatus('Voice on · listening'); setCharacter('listening'); unmuteTimer = window.setTimeout(() => { try { conversation?.setMicMuted(false); } catch { /* session ended */ } }, UNMUTE_DELAY_MS); } } catch { /* session ended */ } },
+      onError: (message) => { if (mySession === sessionId) { const failure = describeFailure(message); setVoiceStatus(failure); hint(failure); } },
+      onDisconnect: (details) => { if (mySession !== sessionId) return; sessionId++; conversation = null; connecting = false; voiceMode = 'idle'; syncVoiceControls(); if (details.reason !== 'user') { const failure = details.reason === 'error' ? describeFailure(details.message) : CLOSED_MSG; setVoiceStatus(failure); hint(failure); } else setVoiceStatus('Voice off · camera can stay on'); setActivityCharacter('idle'); },
     }) as Promise<VoiceConversation>;
-    timeout = window.setTimeout(() => { if (mySession === sessionId && !conversation) { sessionId++; connecting = false; show(el.bottomButtons, true); show(el.bottomMic, false); hint('Voice connection timed out.'); } }, CONNECT_TIMEOUT_MS);
+    timeout = window.setTimeout(() => { if (mySession === sessionId && !conversation) { sessionId++; connecting = false; voiceMode = 'idle'; syncVoiceControls(); setVoiceStatus('Voice connection timed out.'); hint('Voice connection timed out.'); } }, CONNECT_TIMEOUT_MS);
     const connected = await starting;
     if (mySession !== sessionId || !trialActive || trialEnded) { await connected.endSession().catch(() => {}); return; }
-    conversation = connected;
-  } catch (error) { if (mySession === sessionId) { sessionId++; connecting = false; show(el.bottomButtons, true); show(el.bottomMic, false); setCharacter('idle'); hint(describeFailure(error)); } }
-  finally { window.clearTimeout(timeout); }
+    conversation = connected; connecting = false; syncVoiceControls();
+  } catch (error) { if (mySession === sessionId) { sessionId++; connecting = false; voiceMode = 'idle'; syncVoiceControls(); setActivityCharacter('idle'); const failure = describeFailure(error); setVoiceStatus(failure); hint(failure); } }
+  finally { window.clearTimeout(timeout); if (voiceRequest === request) voiceRequest = null; }
 }
 
-function endConversation() { sessionId++; window.clearTimeout(unmuteTimer); const current = conversation; conversation = null; connecting = false; if (current) current.endSession().catch(() => {}); show(el.bottomButtons, true); show(el.bottomMic, false); }
+function endConversation() { sessionId++; window.clearTimeout(unmuteTimer); voiceRequest?.abort(); voiceRequest = null; const current = conversation; conversation = null; connecting = false; voiceMode = 'idle'; if (current) current.endSession().catch(() => {}); syncVoiceControls(); setVoiceStatus('Voice off · camera can stay on'); if (trialActive) setActivityCharacter('learning'); }
 
 function sendTextMessage(text: string) { const message = text.trim(); if (!message) return; if (!conversation) { hint('Open LUMI and tap TALK before sending a text message.'); return; } try { conversation.sendUserMessage(message); hint(''); } catch { hint('Message not sent. Tap TALK to reconnect.'); } }
 
 el.playButton.addEventListener('click', openPlayView); el.lumiButton.addEventListener('click', openLumiView); el.startDemoButton.addEventListener('click', beginTrial); el.stopDemoButton.addEventListener('click', () => endTrial(false));
 document.querySelectorAll<HTMLButtonElement>('.act').forEach((button) => button.addEventListener('click', () => chooseAction(Number(button.dataset.activity))));
 el.cameraButton.addEventListener('click', () => { if (trialActive) void camera.start(); }); el.stopCameraButton.addEventListener('click', () => camera.stop()); el.manualSuccessButton.addEventListener('click', () => acknowledgeAction(false));
-el.talkButton.addEventListener('click', () => void startConversation()); el.stopButton.addEventListener('click', endConversation); el.typeButton.addEventListener('click', () => { el.debugInput.hidden = !el.debugInput.hidden; if (!el.debugInput.hidden) el.debugText.focus(); });
+el.talkButton.addEventListener('click', () => void startConversation()); el.playTalkButton.addEventListener('click', () => void startConversation()); el.stopButton.addEventListener('click', endConversation); el.playStopButton.addEventListener('click', endConversation); el.typeButton.addEventListener('click', () => { el.debugInput.hidden = !el.debugInput.hidden; if (!el.debugInput.hidden) el.debugText.focus(); });
 el.debugInput.addEventListener('submit', (event) => { event.preventDefault(); sendTextMessage(el.debugText.value); el.debugText.value = ''; });
 el.closeCompletionButton.addEventListener('click', () => { show(el.completionDialog, false); show(el.welcomePanel, true); show(el.activityButtons, false); }); el.restartDemoButton.addEventListener('click', () => { show(el.completionDialog, false); beginTrial(); });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { endConversation(); camera.stop(); } else if (!IS_INTERNAL) clock.reconcile(); });

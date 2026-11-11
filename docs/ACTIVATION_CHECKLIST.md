@@ -8,6 +8,7 @@ Complete these steps only after reviewing the final privacy and safeguarding dec
 - Enable signed-URL authentication on both agents. Configure the public agent provider duration to 60 seconds and the internal agent to the approved presenter duration.
 - In Supabase Edge Function secrets, set `ELEVENLABS_API_KEY`, `ELEVENLABS_PUBLIC_AGENT_ID`, `ELEVENLABS_INTERNAL_AGENT_ID`, and `VOICE_RATE_LIMIT_PER_MINUTE`.
 - Deploy `voice-session`, then verify that a public request receives a temporary signed URL and an unauthenticated internal request receives `401`.
+- Only after that check succeeds, set the public `voiceEndpoint` in `apps/lumi/public/voice-config.js` to the deployed HTTPS `voice-session` URL, rebuild Pages, and verify a real microphone conversation while camera-based movement checking remains active. A blank endpoint intentionally reports voice as inactive; never substitute a fabricated URL or expose provider secrets in this file.
 
 ## Supabase and internal access
 

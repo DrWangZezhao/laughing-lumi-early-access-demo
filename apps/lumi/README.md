@@ -27,6 +27,10 @@ Then commit `apps/lumi/` and `demo/` together. Versions are pinned in `package-l
   and then uses the pinned `@elevenlabs/client` SDK. Agent IDs and the ElevenLabs API key stay
   server-side. Both browser routes use the public agent without login; the internal agent
   remains restricted by the server-side authorization check.
+- The public function URL belongs in `public/voice-config.js` only after the function and
+  provider agents are deployed and verified. The committed blank endpoint deliberately
+  reports voice as inactive. Camera movement recognition works independently and remains
+  active while a configured voice conversation is connecting or running.
 - Movement recognition uses the pinned `@mediapipe/tasks-vision` Pose Landmarker Lite model,
   with locally bundled WASM and model files. Camera frames and landmarks remain in the browser.
 - Voice needs https or localhost (microphone rule); the UI also works from a local file.
