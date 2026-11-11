@@ -11,6 +11,7 @@ const poses = [
 ];
 const unityPoses = ['lumi-idle.png', 'lumi-wave.png', 'lumi-listen.png', 'lumi-speak.png', 'lumi-move.png'];
 const runtimeAssets = [
+  'voice-config.js',
   'art/logo.png',
   'art/letters.png',
   'art/winter-scene.jpg',
@@ -22,6 +23,7 @@ const runtimeAssets = [
   'vendor/mediapipe/vision_wasm_module_internal.wasm',
 ];
 const requiredReferences = [
+  './voice-config.js',
   './character/unity/',
   './models/pose_landmarker_lite.task',
   './vendor/mediapipe/',
