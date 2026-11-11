@@ -76,6 +76,7 @@ function openPlayView() {
 }
 
 function openLumiView() {
+  camera.stop();
   viewMode = 'Lumi'; setToggle('Lumi'); show(el.activityWindow, false); show(el.companionWindow, true); setTranscript(''); setCharacter(conversation ? 'listening' : 'greeting');
 }
 
