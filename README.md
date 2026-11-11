@@ -4,7 +4,7 @@ Approved V6 design, five original mascot poses, five languages and pointer/touch
 
 - Website: https://DrWangZezhao.github.io/laughing-lumi-early-access-demo/
 - Real signup: guarded by server-side activation and privacy gates. The public form submits only to the Supabase Edge Function when those gates are explicitly enabled.
-- Demo routes: `demo/` is the public 60-second experience; `team-demo/` is the shared build with server-authorized internal voice access.
+- Demo routes: `demo/` is the public 60-second experience; `team-demo/` opens without a login gate or time limit. Both request the public voice agent. The internal voice agent remains server-authorized and is not exposed by either route.
 - Supabase: source includes registration, signed voice-session issuance, and a durable Google Sheets outbox; deployment and live verification remain manual.
 
 ## Preview and checks
@@ -21,7 +21,7 @@ Open http://localhost:8765. No npm install is needed for production or the core 
 
 ## Files
 
-`index.html`, `css/styles.css`, `js/lumi.js`: original V6 content/animations, with narrow-screen and bubble-boundary fixes. `apps/lumi/`: the shared Vite demo, MediaPipe movement detectors, local camera pipeline, and signed ElevenLabs client. `assets/`: original logo and five PNG poses. `js/signup.js` / `signup-core.js`: registration UX. `supabase/`: guarded registration, voice authorization, and Sheet outbox functions. `docs/ACTIVATION_CHECKLIST.md`: required manual activation and verification steps.
+`index.html`, `css/styles.css`, `js/lumi.js`: original V6 content/animations, with narrow-screen and bubble-boundary fixes. `apps/lumi/`: the shared Vite demo, Unity-model pose renders, MediaPipe movement detectors, local camera pipeline, and signed ElevenLabs client. `assets/`: original logo and five PNG poses, preserved for the main website. `js/signup.js` / `signup-core.js`: registration UX. `supabase/`: guarded registration, voice authorization, and Sheet outbox functions. `docs/ACTIVATION_CHECKLIST.md`: required manual activation and verification steps.
 
 ## Updating with Codex
 

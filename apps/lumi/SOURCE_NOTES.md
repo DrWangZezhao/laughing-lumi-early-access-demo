@@ -1,6 +1,9 @@
 # Lumi Unity project: source notes
 
 Source: Unity Version Control, repository `Lumi/Lumi`, branch `/main`, changeset 7.
+Update: the local Unity 6000.3.26f1 project is now available; the active 3D prefab
+under `CharacterBase` was rendered to the web demo's five transparent pose assets.
+The earlier note below describes the initial source review before model access.
 Unity 6000.3.26f1 (de8167e7440c). One scene: `Assets/Scenes/SampleScene.unity`.
 Files read: the 9 C# scripts, `SampleScene.unity` (YAML), `Packages/manifest.json`,
 `ProjectSettings/ProjectVersion.txt`, and the 2D art (PNG/SVG). The 3D Lumi model
