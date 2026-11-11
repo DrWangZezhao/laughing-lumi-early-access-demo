@@ -4,83 +4,31 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#dbe4ff" />
-<title>Laughing Lumi</title>
+<title>Laughing Lumi · Interactive demo</title>
 <link rel="icon" href="./art/logo.png" />
 </head>
 <body>
 <div id="app">
   <div id="root">
     <header id="topbar">
-      <div class="brand">
-        <img class="logo" src="./art/logo.png" alt="Laughing Lumi logo" />
-        <img class="letters" src="./art/letters.png" alt="Laughing Lumi" />
-      </div>
-      <div id="viewButtons" role="tablist">
-        <button id="playButton" class="seg on" role="tab" aria-selected="true">PLAY</button>
-        <button id="lumiButton" class="seg" role="tab" aria-selected="false">LUMI</button>
-      </div>
-      <div class="right">
-        <button id="scoresButton" class="sq tint" aria-label="Scores"><img src="./art/reward.svg" alt="" /></button>
-        <button id="settingsButton" class="sq tint" aria-label="Settings"><img src="./art/gear.svg" alt="" /></button>
-      </div>
+      <div class="brand"><img class="logo" src="./art/logo.png" alt="Laughing Lumi logo" /><img class="letters" src="./art/letters.png" alt="Laughing Lumi" /></div>
+      <div id="viewButtons" role="tablist" aria-label="Demo view"><button id="playButton" class="seg on" role="tab" aria-selected="true">PLAY</button><button id="lumiButton" class="seg" role="tab" aria-selected="false">LUMI</button></div>
+      <div class="right"><button id="scoresButton" class="sq tint" aria-label="Scores"><img src="./art/reward.svg" alt="" /></button><button id="settingsButton" class="sq tint" aria-label="Settings"><img src="./art/gear.svg" alt="" /></button></div>
     </header>
-
     <main id="frame">
-      <div id="stage" style="background-image:url(./art/winter-scene.jpg)">
-        <img id="character" src="./art/lumi-face.png" alt="Lumi" />
-      </div>
-
-      <!-- ActivityWindow (PLAY) -->
-      <section id="activityWindow" class="view">
-        <div id="activityButtons" class="panel">
-          <button class="act" data-activity="0" style="--fill:#FF9500;--stroke:#FFBF66;--c:#d09100">
-            <span class="base"><img src="./art/icon-move.svg" alt="" /><b>MOVE</b></span>
-            <span class="txt">Show Lumi how to greet new friends by waving</span>
-          </button>
-          <button class="act" data-activity="1" style="--fill:#57C5CD;--stroke:#9ADCE1;--c:#59b3b7">
-            <span class="base"><img src="./art/icon-listen.svg" alt="" /><b>LISTEN</b></span>
-            <span class="txt">Listen to what Lumi knows about snow</span>
-          </button>
-          <button class="act" data-activity="2" style="--fill:#A641CD;--stroke:#CA8DE1;--c:#9e42b7">
-            <span class="base"><img src="./art/icon-create.svg" alt="" /><b>CREATE</b></span>
-            <span class="txt">Draw a snowflake with Lumi</span>
-          </button>
-          <button class="act" data-activity="3" style="--fill:#B7D700;--stroke:#D7EB66;--c:#aabd00">
-            <span class="base"><img src="./art/icon-do.svg" alt="" /><b>DO</b></span>
-            <span class="txt">Take Lumi outdoors</span>
-          </button>
-        </div>
-        <div id="activityInstruction" class="panel hidden">
-          <button id="instructionButton" class="instr">
-            <span class="base"><img src="./art/show.svg" alt="" /><b>SHOW</b></span>
-            <span class="txt">Activity instruction text. Show Lumi how to greet new friends by waving</span>
-          </button>
-          <button id="startActivityButton" class="round tint" aria-label="Start activity"><img src="./art/show.svg" alt="" /></button>
-        </div>
+      <div id="stage" style="background-image:url(./art/winter-scene.jpg)"><img id="character" class="character" src="./character/lumi-stand.png" alt="Lumi" /><div id="characterStatus" class="character-status" aria-live="polite">Lumi is ready to play</div><div id="sessionBar" class="session-bar" hidden><span id="sessionLabel">PUBLIC DEMO</span><strong id="countdown">01:00</strong><button id="stopDemoButton" type="button">Stop</button></div><div id="cameraCard" class="camera-card" hidden><div class="camera-heading"><span class="camera-dot" aria-hidden="true"></span><strong>Camera is on</strong><button id="stopCameraButton" type="button">Stop camera</button></div><video id="cameraPreview" autoplay muted playsinline aria-label="Mirrored local camera preview"></video><p id="cameraStatus">Video is processed locally and is not uploaded or saved.</p></div></div>
+      <section id="activityWindow" class="view" aria-label="Play activities">
+        <div id="welcomePanel" class="panel welcome-panel"><p class="eyebrow">LUMI'S WINTER PLAYGROUND</p><h1 id="welcomeTitle">Try Lumi — 1-minute interactive demo</h1><p id="welcomeBody">Choose a movement, let Lumi show you what to do, and help us learn what feels fun.</p><button id="startDemoButton" class="primary-action" type="button">Start Demo</button><p id="trialNote" class="small-note">Camera and microphone are optional. The public trial lasts exactly 60 seconds once started.</p></div>
+        <div id="activityButtons" class="panel hidden"><div class="activity-heading"><div><p class="eyebrow">MOVE WITH LUMI</p><h2>Pick a movement</h2></div><span id="activityFeedback" role="status" aria-live="polite">Camera off · manual mode</span></div><div class="activity-grid"><button class="act selected" data-activity="0" type="button"><span class="base"><img src="./art/icon-move.svg" alt="" /><b>WAVE</b></span><span class="txt">Wave hello</span></button><button class="act" data-activity="1" type="button"><span class="base"><img src="./art/icon-move.svg" alt="" /><b>UP</b></span><span class="txt">Hands up</span></button><button class="act" data-activity="2" type="button"><span class="base"><img src="./art/icon-move.svg" alt="" /><b>SNOW</b></span><span class="txt">Snowflake pose</span></button><button class="act" data-activity="3" type="button"><span class="base"><img src="./art/icon-move.svg" alt="" /><b>SWAY</b></span><span class="txt">Sway like a tree</span></button><button class="act" data-activity="4" type="button"><span class="base"><img src="./art/icon-move.svg" alt="" /><b>HEAD</b></span><span class="txt">Touch your head</span></button></div><div id="activityInstruction" class="instruction-card"><p id="activityName">Wave Hello</p><p id="activityInstructionText">Raise one hand and wave side to side.</p><div class="instruction-actions"><button id="cameraButton" type="button" class="secondary-action">Enable camera</button><button id="manualSuccessButton" type="button" class="secondary-action">I did it <span>(unverified)</span></button></div><div class="progress-track"><span id="activityProgress"></span></div></div></div>
+        <div id="upcomingPanel" class="panel upcoming-panel"><p><strong>LISTEN, CREATE, and DO</strong> are coming soon. Voice and movement play are available now.</p></div>
       </section>
-
-      <!-- AICompanionWindow (LUMI) -->
-      <section id="companionWindow" class="view hidden">
-        <div id="debugBG" class="hidden"><div id="debugTranscript"></div></div>
-        <div id="bottomInteractionButtons">
-          <button id="typeButton" class="type tint"><img src="./art/keyboard.svg" alt="" /><span>TYPE</span></button>
-          <button id="talkButton" class="talk tint"><img src="./art/mic.svg" alt="" /><span>TALK</span></button>
-        </div>
-        <div id="bottomInteractionMicrophone" class="panel hidden">
-          <div class="listening">LUMI IS LISTENING...</div>
-          <button id="stopButton" class="round tint" aria-label="Stop talking"><img src="./art/mic.svg" alt="" /></button>
-          <div class="stoptext">STOP TALKING</div>
-        </div>
-      </section>
+      <section id="companionWindow" class="view hidden" aria-label="Talk to Lumi"><div id="debugBG" class="hidden"><div id="debugTranscript"></div></div><div id="bottomInteractionButtons"><button id="typeButton" class="type tint" type="button"><img src="./art/keyboard.svg" alt="" /><span>TYPE</span></button><button id="talkButton" class="talk tint" type="button"><img src="./art/mic.svg" alt="" /><span>TALK</span></button></div><div id="bottomInteractionMicrophone" class="panel hidden"><div class="listening">LUMI IS LISTENING...</div><button id="stopButton" class="round tint" type="button" aria-label="Stop talking"><img src="./art/mic.svg" alt="" /></button><div class="stoptext">STOP TALKING</div></div></section>
     </main>
   </div>
-
-  <form id="debugInput" autocomplete="off">
-    <input id="debugText" type="text" enterkeyhint="send" placeholder="Type a message to Lumi" />
-    <button type="submit">Send</button>
-  </form>
-  <div id="debugHint" class="hidden"></div>
+  <form id="debugInput" autocomplete="off" hidden><label class="sr-only" for="debugText">Message Lumi</label><input id="debugText" type="text" enterkeyhint="send" placeholder="Type a message to Lumi" /><button type="submit">Send</button></form><div id="debugHint" class="hidden" role="alert"></div>
 </div>
+<div id="completionDialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="completionTitle"><div class="dialog-card"><button id="closeCompletionButton" class="dialog-close" type="button" aria-label="Close">×</button><img class="dialog-lumi" src="./character/lumi-wave.png" alt="Lumi waving" /><p class="eyebrow">DEMO COMPLETE</p><h2 id="completionTitle">Thank you for trying Lumi!</h2><p>Help us improve Lumi — Share your feedback</p><a id="surveyButton" class="primary-action" href="https://script.google.com/macros/s/AKfycbzhraBB4vfYdVVjBPNGkVEjB6rZ4o1G1FVc2nlwrHprgm5ZehF2f0isWVlquAwJrT9LlA/exec?src=homepage" target="_blank" rel="noopener noreferrer">Take the survey ↗</a><button id="restartDemoButton" class="secondary-action" type="button">Start again</button></div></div>
+<div id="internalGate" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="internalGateTitle"><div class="dialog-card"><p class="eyebrow">AUTHORIZED TEAM DEMO</p><h2 id="internalGateTitle">Sign in to try the internal demo</h2><p id="internalGateBody">The team demo is protected. Enter your approved email to receive a one-time sign-in link.</p><form id="internalLoginForm"><label for="internalEmail">Approved email</label><input id="internalEmail" type="email" autocomplete="email" required /><button class="primary-action" type="submit">Send sign-in link</button></form><p id="internalLoginStatus" role="status" aria-live="polite"></p><button id="internalLogoutButton" class="secondary-action hidden" type="button">Sign out</button></div></div>
 <script type="module" src="./src/main.ts"></script>
 </body>
 </html>

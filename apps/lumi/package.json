@@ -14,7 +14,8 @@
   },
   "dependencies": {
     "@alexanderolsen/libsamplerate-js": "2.1.2",
-    "@elevenlabs/client": "1.36.0"
+    "@elevenlabs/client": "1.36.0",
+    "@mediapipe/tasks-vision": "1.2.2"
   },
   "private": true
 }

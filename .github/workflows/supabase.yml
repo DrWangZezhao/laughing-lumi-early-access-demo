@@ -22,3 +22,5 @@ jobs:
       - run: supabase link --project-ref "$SUPABASE_PROJECT_ID"
       - run: supabase db push
       - run: supabase functions deploy signup --project-ref "$SUPABASE_PROJECT_ID"
+      - run: supabase functions deploy voice-session --project-ref "$SUPABASE_PROJECT_ID"
+      - run: supabase functions deploy sync-sheets --project-ref "$SUPABASE_PROJECT_ID"

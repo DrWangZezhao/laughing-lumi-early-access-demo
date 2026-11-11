@@ -1,0 +1,7 @@
+Third-party component: @mediapipe/tasks-vision 1.2.2
+License: Apache License 2.0
+Source: https://www.npmjs.com/package/@mediapipe/tasks-vision
+
+The bundled pose_landmarker_lite.task model is a MediaPipe Pose Landmarker Lite
+model distributed by Google AI Edge for browser-local inference. Model source
+documentation: https://developers.google.com/edge/mediapipe/solutions/vision/pose_landmarker

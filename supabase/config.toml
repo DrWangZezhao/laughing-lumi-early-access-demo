@@ -1,3 +1,9 @@
 project_id = "laughing-lumi-early-access-demo"
 [functions.signup]
 verify_jwt = false
+
+[functions.voice-session]
+verify_jwt = false
+
+[functions.sync-sheets]
+verify_jwt = false
