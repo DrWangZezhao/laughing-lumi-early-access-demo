@@ -6,3 +6,4 @@ for(const name of ['index.html','assets','css','js','demo','privacy','research',
 await cp('demo','dist/team-demo',{recursive:true});
 await mkdir('dist/investors');await cp('investors/index.html','dist/investors/index.html');
 await writeFile('dist/.nojekyll','');
+execFileSync(process.execPath,['scripts/verify-build.js'],{stdio:'inherit'});
