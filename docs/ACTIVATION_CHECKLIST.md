@@ -12,7 +12,7 @@ Complete these steps only after reviewing the final privacy and safeguarding dec
 ## Supabase and internal access
 
 - Set `ALLOWED_ORIGINS` to the exact GitHub Pages origin, `SUPABASE_ANON_KEY` to the project anon key, and use the project `SUPABASE_URL` supplied by Supabase.
-- Configure passwordless email in Supabase Auth and set the demo build's public `supabaseUrl` and `supabaseAnonKey` values. These are public client values, not service secrets.
+- The browser's `/team-demo/` route deliberately has no login gate and uses only the public voice agent. Do not expose the internal agent through that route.
 - Set the server-only `INTERNAL_ALLOWED_EMAILS` allowlist. Never copy this list into website JavaScript.
 - Deploy the latest migrations and `voice-session`. Verify an allowlisted user can request the internal agent and an unlisted user cannot.
 
@@ -26,4 +26,4 @@ Complete these steps only after reviewing the final privacy and safeguarding dec
 
 - Confirm controller identity, processor disclosures, retention, withdrawal/deletion handling, and child-use safeguards. Set the final `PRIVACY_NOTICE_VERSION` and only then enable `REAL_SIGNUP_ENABLED=true` and `PRIVACY_READY=true` for `signup`.
 - Verify that camera video, frames, landmarks, and inferred actions stay local; explain that voice audio is streamed to ElevenLabs when TALK is used and confirm provider retention settings.
-- Run the real end-to-end checks for registration, duplicate handling, Sheets sync, public 60-second expiry, denied camera/microphone, and authorized internal sign-in. Check deployed `/demo/` and `/team-demo/` routes on desktop and mobile.
+- Run the real end-to-end checks for registration, duplicate handling, Sheets sync, public 60-second expiry, denied camera/microphone, no-login Team demo, and server-side rejection of unauthenticated internal voice requests. Check deployed `/demo/` and `/team-demo/` routes on desktop and mobile.

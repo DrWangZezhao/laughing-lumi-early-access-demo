@@ -6,7 +6,7 @@ import { createSessionClock } from './session.js';
 
 const IS_INTERNAL = /\/team-demo\/?$/u.test(window.location.pathname);
 const SURVEY_URL = 'https://script.google.com/macros/s/AKfycbzhraBB4vfYdVVjBPNGkVEjB6rZ4o1G1FVc2nlwrHprgm5ZehF2f0isWVlquAwJrT9LlA/exec?src=homepage';
-const DEMO_CONFIG = (window as unknown as { LUMI_DEMO_CONFIG?: { voiceEndpoint?: string; supabaseUrl?: string; supabaseAnonKey?: string } }).LUMI_DEMO_CONFIG ?? {};
+const DEMO_CONFIG = (window as unknown as { LUMI_DEMO_CONFIG?: { voiceEndpoint?: string } }).LUMI_DEMO_CONFIG ?? {};
 const VOICE_ENDPOINT = DEMO_CONFIG.voiceEndpoint || 'https://vgeseoyoztogthygvzog.supabase.co/functions/v1/voice-session';
 const CONNECT_TIMEOUT_MS = 20000;
 const UNMUTE_DELAY_MS = 400;
@@ -22,7 +22,6 @@ const el = {
   activityName: $('activityName'), activityInstructionText: $('activityInstructionText'), activityProgress: $('activityProgress'), manualSuccessButton: $('manualSuccessButton'),
   debugBG: $('debugBG'), debugTranscript: $('debugTranscript'), debugInput: $('debugInput') as HTMLFormElement, debugText: $('debugText') as HTMLInputElement, debugHint: $('debugHint'), bottomButtons: $('bottomInteractionButtons'), bottomMic: $('bottomInteractionMicrophone'),
   talkButton: $('talkButton'), typeButton: $('typeButton'), stopButton: $('stopButton'), completionDialog: $('completionDialog'), closeCompletionButton: $('closeCompletionButton'), restartDemoButton: $('restartDemoButton'),
-  internalGate: $('internalGate'), internalLoginForm: $('internalLoginForm') as HTMLFormElement, internalEmail: $('internalEmail') as HTMLInputElement, internalLoginStatus: $('internalLoginStatus'), internalLogoutButton: $('internalLogoutButton'),
 };
 const show = (node: HTMLElement, visible: boolean) => { node.classList.toggle('hidden', !visible); node.hidden = !visible; };
 
@@ -33,8 +32,6 @@ let trialEnded = false;
 let currentAction = 0;
 let actionTimer: number | undefined;
 let actionDetector = createActionDetector(ACTIONS[0].id);
-let accessToken = sessionStorage.getItem('lumi_internal_access_token') || '';
-let internalAuthorized = false;
 let conversation: VoiceConversation | null = null;
 let connecting = false;
 let sessionId = 0;
@@ -63,8 +60,8 @@ function formatTime(milliseconds: number): string {
 }
 
 function setCharacter(state: 'idle' | 'greeting' | 'listening' | 'speaking' | 'moving' | 'learning' | 'celebrating') {
-  const assets: Record<string, string> = { idle: 'lumi-stand.png', greeting: 'lumi-wave.png', listening: 'lumi-peek.png', speaking: 'lumi-stand.png', moving: 'lumi-run.png', learning: 'lumi-book.png', celebrating: 'lumi-wave.png' };
-  el.character.src = `./character/${assets[state]}`;
+  const assets: Record<string, string> = { idle: 'lumi-idle.png', greeting: 'lumi-wave.png', listening: 'lumi-listen.png', speaking: 'lumi-speak.png', moving: 'lumi-move.png', learning: 'lumi-listen.png', celebrating: 'lumi-wave.png' };
+  el.character.src = `./character/unity/${assets[state]}`;
   el.character.className = `character is-${state}`;
 }
 
@@ -112,7 +109,6 @@ function acknowledgeAction(verified: boolean) {
 
 function beginTrial() {
   if (IS_INTERNAL) {
-    if (!internalAuthorized) { show(el.internalGate, true); return; }
     trialActive = true; trialEnded = false; el.sessionLabel.textContent = 'TEAM DEMO'; el.countdown.textContent = '—'; show(el.sessionBar, true);
   } else {
     if (clock.started && !clock.expired) return;
@@ -129,11 +125,9 @@ function endTrial(expired = false) {
   else { show(el.welcomePanel, true); show(el.activityButtons, false); setCharacter('idle'); el.characterStatus.textContent = 'Lumi is ready to play'; }
 }
 
-async function requestSignedUrl(scope: 'public' | 'internal'): Promise<string> {
-  if (scope === 'internal' && (!internalAuthorized || !accessToken)) throw new Error('Internal sign-in required.');
+async function requestSignedUrl(): Promise<string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (scope === 'internal') headers.Authorization = `Bearer ${accessToken}`;
-  const response = await fetch(VOICE_ENDPOINT, { method: 'POST', headers, body: JSON.stringify({ scope }) });
+  const response = await fetch(VOICE_ENDPOINT, { method: 'POST', headers, body: JSON.stringify({ scope: 'public' }) });
   const data = await response.json().catch(() => ({})) as { signedUrl?: string; error?: string };
   if (!response.ok || !data.signedUrl) throw new Error(data.error || 'Voice is not configured yet.');
   return data.signedUrl;
@@ -148,13 +142,13 @@ function describeFailure(error: unknown): string {
 }
 
 async function startConversation() {
-  if (!trialActive || trialEnded) { hint(IS_INTERNAL ? 'Sign in and start the team demo first.' : 'Start the 1-minute demo first.'); return; }
+  if (!trialActive || trialEnded) { hint('Start the demo first.'); return; }
   if (quotaExhausted || conversation || connecting) return;
   if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) { hint('Voice needs a secure page and a microphone-capable browser.'); return; }
   connecting = true; const mySession = ++sessionId; setCharacter('listening'); show(el.bottomButtons, false); show(el.bottomMic, true); setTranscript(''); hint('Connecting to Lumi…');
   let timeout: number | undefined;
   try {
-    const signedUrl = await requestSignedUrl(IS_INTERNAL ? 'internal' : 'public');
+    const signedUrl = await requestSignedUrl();
     const starting = Conversation.startSession({ signedUrl, connectionType: 'websocket', libsampleratePath: new URL('./vendor/libsamplerate.worklet.js', document.baseURI).href,
       onConnect: () => { if (mySession === sessionId) { hint(''); setCharacter('listening'); } },
       onMessage: (message) => { if (mySession !== sessionId) return; const role = (message as { role?: string; source?: string }).role || ((message as { source?: string }).source === 'ai' ? 'agent' : 'user'); if (role === 'agent') setTranscript((message as { message: string }).message); },
@@ -174,49 +168,14 @@ function endConversation() { sessionId++; window.clearTimeout(unmuteTimer); cons
 
 function sendTextMessage(text: string) { const message = text.trim(); if (!message) return; if (!conversation) { hint('Open LUMI and tap TALK before sending a text message.'); return; } try { conversation.sendUserMessage(message); hint(''); } catch { hint('Message not sent. Tap TALK to reconnect.'); } }
 
-async function requestMagicLink(email: string) {
-  if (!DEMO_CONFIG.supabaseUrl || !DEMO_CONFIG.supabaseAnonKey) throw new Error('Internal sign-in is not configured yet.');
-  const response = await fetch(`${DEMO_CONFIG.supabaseUrl}/auth/v1/otp`, { method: 'POST', headers: { apikey: DEMO_CONFIG.supabaseAnonKey, 'Content-Type': 'application/json' }, body: JSON.stringify({ email, create_user: false, email_redirect_to: `${window.location.origin}${window.location.pathname}` }) });
-  if (!response.ok) throw new Error('That sign-in link could not be requested.');
-}
-
-function handleAuthHash() { const params = new URLSearchParams(window.location.hash.replace(/^#/, '')); const token = params.get('access_token'); if (token) { accessToken = token; sessionStorage.setItem('lumi_internal_access_token', token); history.replaceState(null, '', window.location.pathname); } }
-
-async function bootInternal() {
-  handleAuthHash();
-  if (!IS_INTERNAL) return;
-  show(el.internalGate, true);
-  if (!DEMO_CONFIG.supabaseUrl || !DEMO_CONFIG.supabaseAnonKey) {
-    el.internalLoginStatus.textContent = 'Internal access is unavailable until Supabase Auth is configured.';
-    return;
-  }
-  if (!accessToken) return;
-  el.internalLoginStatus.textContent = 'Verifying sign-in…';
-  try {
-    const response = await fetch(`${DEMO_CONFIG.supabaseUrl}/auth/v1/user`, {
-      headers: { apikey: DEMO_CONFIG.supabaseAnonKey, Authorization: `Bearer ${accessToken}` },
-    });
-    if (!response.ok) throw new Error('Sign-in has expired. Request a new link.');
-    internalAuthorized = true;
-    show(el.internalGate, false);
-    beginTrial();
-  } catch {
-    accessToken = '';
-    sessionStorage.removeItem('lumi_internal_access_token');
-    el.internalLoginStatus.textContent = 'Sign-in could not be verified. Request a new link.';
-  }
-}
-
 el.playButton.addEventListener('click', openPlayView); el.lumiButton.addEventListener('click', openLumiView); el.startDemoButton.addEventListener('click', beginTrial); el.stopDemoButton.addEventListener('click', () => endTrial(false));
 document.querySelectorAll<HTMLButtonElement>('.act').forEach((button) => button.addEventListener('click', () => chooseAction(Number(button.dataset.activity))));
 el.cameraButton.addEventListener('click', () => { if (trialActive) void camera.start(); }); el.stopCameraButton.addEventListener('click', () => camera.stop()); el.manualSuccessButton.addEventListener('click', () => acknowledgeAction(false));
 el.talkButton.addEventListener('click', () => void startConversation()); el.stopButton.addEventListener('click', endConversation); el.typeButton.addEventListener('click', () => { el.debugInput.hidden = !el.debugInput.hidden; if (!el.debugInput.hidden) el.debugText.focus(); });
 el.debugInput.addEventListener('submit', (event) => { event.preventDefault(); sendTextMessage(el.debugText.value); el.debugText.value = ''; });
 el.closeCompletionButton.addEventListener('click', () => { show(el.completionDialog, false); show(el.welcomePanel, true); show(el.activityButtons, false); }); el.restartDemoButton.addEventListener('click', () => { show(el.completionDialog, false); beginTrial(); });
-el.internalLoginForm.addEventListener('submit', async (event) => { event.preventDefault(); el.internalLoginStatus.textContent = 'Sending sign-in link…'; try { await requestMagicLink(el.internalEmail.value.trim()); el.internalLoginStatus.textContent = 'Check your email for the one-time sign-in link.'; } catch (error) { el.internalLoginStatus.textContent = describeFailure(error); } });
-el.internalLogoutButton.addEventListener('click', () => { accessToken = ''; internalAuthorized = false; sessionStorage.removeItem('lumi_internal_access_token'); endTrial(false); show(el.internalGate, true); });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { endConversation(); camera.stop(); } else if (!IS_INTERNAL) clock.reconcile(); });
 window.addEventListener('pagehide', () => { endConversation(); camera.dispose(); });
 
-openPlayView(); void bootInternal();
+openPlayView(); if (IS_INTERNAL) beginTrial();
 (window as unknown as { lumi: object }).lumi = { get connected() { return Boolean(conversation); }, get mode() { return viewMode; }, get trialActive() { return trialActive; }, get trialEnded() { return trialEnded; }, get internal() { return IS_INTERNAL; }, startDemo: beginTrial, stopDemo: () => endTrial(false) };
