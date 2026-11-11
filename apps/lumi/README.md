@@ -17,6 +17,9 @@ npm run build      # type-checks, builds into ../../demo/, inlines JS+CSS into d
 Then commit `apps/lumi/` and `demo/` together. Versions are pinned in `package-lock.json`.
 
 - `npm run dev` serves the app at http://localhost:5173 for development.
-- Voice uses the public ElevenLabs agent `agent_9301kcgfjb9dej59tnqs95024zq1` through the
-  `@elevenlabs/client` SDK, bundled locally. No API key is used or stored.
+- Voice requests a short-lived signed WebSocket URL from the Supabase `voice-session` function
+  and then uses the pinned `@elevenlabs/client` SDK. Agent IDs and the ElevenLabs API key stay
+  server-side; public and internal agents are selected by the function.
+- Movement recognition uses the pinned `@mediapipe/tasks-vision` Pose Landmarker Lite model,
+  with locally bundled WASM and model files. Camera frames and landmarks remain in the browser.
 - Voice needs https or localhost (microphone rule); the UI also works from a local file.

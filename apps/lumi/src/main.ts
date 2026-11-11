@@ -1,283 +1,200 @@
-// Web port of the Lumi Unity scene (SampleScene, cs:7). Comments reference the
-// original C# classes so behaviour can be checked against the source.
 import './style.css';
 import { Conversation, type VoiceConversation } from '@elevenlabs/client';
+import { ACTIONS, createActionDetector } from './vision/actions.js';
+import { CameraController, type CameraStatus } from './vision/camera.js';
+import { createSessionClock } from './session.js';
 
-// From SampleScene.unity -> ElevenLabsClient.agentId
-const AGENT_ID = 'agent_9301kcgfjb9dej59tnqs95024zq1';
-// ElevenLabsConvAIClient.unmuteDelaySeconds
+const IS_INTERNAL = /\/team-demo\/?$/u.test(window.location.pathname);
+const SURVEY_URL = 'https://script.google.com/macros/s/AKfycbzhraBB4vfYdVVjBPNGkVEjB6rZ4o1G1FVc2nlwrHprgm5ZehF2f0isWVlquAwJrT9LlA/exec?src=homepage';
+const DEMO_CONFIG = (window as unknown as { LUMI_DEMO_CONFIG?: { voiceEndpoint?: string; supabaseUrl?: string; supabaseAnonKey?: string } }).LUMI_DEMO_CONFIG ?? {};
+const VOICE_ENDPOINT = DEMO_CONFIG.voiceEndpoint || 'https://vgeseoyoztogthygvzog.supabase.co/functions/v1/voice-session';
+const CONNECT_TIMEOUT_MS = 20000;
 const UNMUTE_DELAY_MS = 400;
-// Strings copied from ElevenLabsConvAIClient.cs
-const QUOTA_MSG = 'Voice unavailable: ElevenLabs credits exhausted. After credits are restored, restart Play mode.';
+const QUOTA_MSG = 'Voice unavailable right now. Please try again later.';
 const CLOSED_MSG = 'Voice connection closed. Tap TALK to reconnect.';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
-
 const el = {
-  playButton: $('playButton'),
-  lumiButton: $('lumiButton'),
-  activityWindow: $('activityWindow'),
-  companionWindow: $('companionWindow'),
-  activityButtons: $('activityButtons'),
-  activityInstruction: $('activityInstruction'),
-  bottomButtons: $('bottomInteractionButtons'),
-  bottomMic: $('bottomInteractionMicrophone'),
-  talkButton: $('talkButton'),
-  stopButton: $('stopButton'),
-  debugBG: $('debugBG'),
-  debugTranscript: $('debugTranscript'),
-  debugInput: $<HTMLFormElement>('debugInput'),
-  debugText: $<HTMLInputElement>('debugText'),
-  debugHint: $('debugHint'),
+  playButton: $('playButton'), lumiButton: $('lumiButton'), activityWindow: $('activityWindow'), companionWindow: $('companionWindow'),
+  welcomePanel: $('welcomePanel'), activityButtons: $('activityButtons'), startDemoButton: $('startDemoButton'), stopDemoButton: $('stopDemoButton'),
+  sessionBar: $('sessionBar'), sessionLabel: $('sessionLabel'), countdown: $('countdown'), character: $('character') as HTMLImageElement,
+  characterStatus: $('characterStatus'), cameraCard: $('cameraCard'), cameraPreview: $('cameraPreview') as HTMLVideoElement, cameraButton: $('cameraButton'), stopCameraButton: $('stopCameraButton'), cameraStatus: $('cameraStatus'), activityFeedback: $('activityFeedback'),
+  activityName: $('activityName'), activityInstructionText: $('activityInstructionText'), activityProgress: $('activityProgress'), manualSuccessButton: $('manualSuccessButton'),
+  debugBG: $('debugBG'), debugTranscript: $('debugTranscript'), debugInput: $('debugInput') as HTMLFormElement, debugText: $('debugText') as HTMLInputElement, debugHint: $('debugHint'), bottomButtons: $('bottomInteractionButtons'), bottomMic: $('bottomInteractionMicrophone'),
+  talkButton: $('talkButton'), typeButton: $('typeButton'), stopButton: $('stopButton'), completionDialog: $('completionDialog'), closeCompletionButton: $('closeCompletionButton'), restartDemoButton: $('restartDemoButton'),
+  internalGate: $('internalGate'), internalLoginForm: $('internalLoginForm') as HTMLFormElement, internalEmail: $('internalEmail') as HTMLInputElement, internalLoginStatus: $('internalLoginStatus'), internalLogoutButton: $('internalLogoutButton'),
 };
+const show = (node: HTMLElement, visible: boolean) => { node.classList.toggle('hidden', !visible); node.hidden = !visible; };
 
-const show = (e: HTMLElement, on: boolean) => e.classList.toggle('hidden', !on);
-
-// ---------------------------------------------------------------- UIModeToggle
 type ViewMode = 'Play' | 'Lumi';
 let viewMode: ViewMode = 'Play';
+let trialActive = false;
+let trialEnded = false;
+let currentAction = 0;
+let actionTimer: number | undefined;
+let actionDetector = createActionDetector(ACTIONS[0].id);
+let accessToken = sessionStorage.getItem('lumi_internal_access_token') || '';
+let conversation: VoiceConversation | null = null;
+let connecting = false;
+let sessionId = 0;
+let quotaExhausted = false;
+let unmuteTimer: number | undefined;
+let hintTimer: number | undefined;
+
+const camera = new CameraController(el.cameraPreview, (landmarks) => {
+  if (!trialActive || trialEnded) return;
+  const result = actionDetector.update(landmarks);
+  if (result.status === 'camera-unavailable') return;
+  el.activityProgress.style.width = `${Math.round(result.progress * 100)}%`;
+  if (result.progress > 0 && !result.detected) setCharacter('moving');
+  if (result.detected) acknowledgeAction(true);
+}, (status, message) => updateCameraStatus(status, message));
+
+const clock = createSessionClock({
+  onTick: (remaining) => { el.countdown.textContent = formatTime(remaining); },
+  onExpire: () => endTrial(true),
+});
+
+function formatTime(milliseconds: number): string {
+  const seconds = Math.max(0, Math.ceil(milliseconds / 1000));
+  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+function setCharacter(state: 'idle' | 'greeting' | 'listening' | 'speaking' | 'moving' | 'learning' | 'celebrating') {
+  const assets: Record<string, string> = { idle: 'lumi-stand.png', greeting: 'lumi-wave.png', listening: 'lumi-peek.png', speaking: 'lumi-stand.png', moving: 'lumi-run.png', learning: 'lumi-book.png', celebrating: 'lumi-wave.png' };
+  el.character.src = `./character/${assets[state]}`;
+  el.character.className = `character is-${state}`;
+}
 
 function setToggle(mode: ViewMode) {
   const play = mode === 'Play';
-  el.playButton.classList.toggle('on', play);
-  el.lumiButton.classList.toggle('on', !play);
-  el.playButton.setAttribute('aria-selected', String(play));
-  el.lumiButton.setAttribute('aria-selected', String(!play));
+  el.playButton.classList.toggle('on', play); el.lumiButton.classList.toggle('on', !play);
+  el.playButton.setAttribute('aria-selected', String(play)); el.lumiButton.setAttribute('aria-selected', String(!play));
 }
 
-function playMode() {
-  if (viewMode === 'Play') return;
-  viewMode = 'Play';
-  setToggle('Play');
-  openPlayView();
-}
-
-function lumiMode() {
-  if (viewMode === 'Lumi') return;
-  viewMode = 'Lumi';
-  setToggle('Lumi');
-  openLumiView();
-}
-
-// ------------------------------------------------------------------- UIManager
 function openPlayView() {
-  show(el.activityWindow, true);
-  show(el.companionWindow, false);
-  activityOpenView();
-  characterCloseView();
+  viewMode = 'Play'; setToggle('Play'); show(el.activityWindow, true); show(el.companionWindow, false); setCharacter(trialActive ? 'learning' : 'idle');
 }
 
 function openLumiView() {
-  show(el.companionWindow, true);
-  show(el.activityWindow, false);
-  characterOnEnable();
-  characterOpenView();
-  // UIActivityView.CloseView() is empty in the source.
+  viewMode = 'Lumi'; setToggle('Lumi'); show(el.activityWindow, false); show(el.companionWindow, true); setTranscript(''); setCharacter(conversation ? 'listening' : 'greeting');
 }
 
-// -------------------------------------------------------------- UIActivityView
-function activityOpenView() {
-  show(el.activityButtons, true);
-  show(el.activityInstruction, false);
+function setTranscript(text: string) { el.debugTranscript.textContent = text; show(el.debugBG, Boolean(text)); }
+function hint(text: string) { el.debugHint.textContent = text; show(el.debugHint, Boolean(text)); window.clearTimeout(hintTimer); if (text) hintTimer = window.setTimeout(() => show(el.debugHint, false), 5000); }
+
+function updateCameraStatus(status: CameraStatus, message?: string) {
+  if (status === 'ready') { show(el.cameraCard, true); el.cameraStatus.textContent = 'Video is processed locally and is not uploaded or saved.'; el.activityFeedback.textContent = 'Camera on · checking locally'; setCharacter('listening'); return; }
+  if (status === 'starting') { el.activityFeedback.textContent = 'Starting camera…'; return; }
+  show(el.cameraCard, false);
+  if (status === 'denied' || status === 'unavailable' || status === 'model-unavailable') { el.activityFeedback.textContent = 'Camera unavailable · manual mode'; hint(message || 'Camera unavailable. Movement is unverified.'); }
+  else if (status === 'stopped') el.activityFeedback.textContent = 'Camera off · manual mode';
 }
 
-function selectActivity(activity: number) {
-  // Only Activity.Show (0) has behaviour in the source; Listen/Draw/Do are empty cases.
-  if (activity === 0 || activity > 3) {
-    show(el.activityButtons, false);
-    show(el.activityInstruction, true);
+function chooseAction(index: number) {
+  if (!trialActive || trialEnded) return;
+  currentAction = Math.max(0, Math.min(ACTIONS.length - 1, index));
+  actionDetector = createActionDetector(ACTIONS[currentAction].id);
+  document.querySelectorAll<HTMLButtonElement>('.act').forEach((button) => button.classList.toggle('selected', Number(button.dataset.activity) === currentAction));
+  el.activityName.textContent = ACTIONS[currentAction].label; el.activityInstructionText.textContent = ACTIONS[currentAction].instruction; el.activityProgress.style.width = '0%';
+  setCharacter('learning'); el.characterStatus.textContent = `Lumi says: ${ACTIONS[currentAction].instruction}`; el.activityFeedback.textContent = camera.active ? 'Camera on · checking locally' : 'Camera off · manual mode';
+}
+
+function acknowledgeAction(verified: boolean) {
+  if (!trialActive || trialEnded) return;
+  setCharacter('celebrating'); el.characterStatus.textContent = verified ? 'Lumi saw it — hooray!' : 'Nice try! (unverified)'; el.activityFeedback.textContent = verified ? 'Movement detected ✓' : 'Marked complete · unverified';
+  actionDetector.reset();
+  window.clearTimeout(actionTimer);
+  actionTimer = window.setTimeout(() => { if (!trialActive || trialEnded) return; chooseAction((currentAction + 1) % ACTIONS.length); }, 950);
+}
+
+function beginTrial() {
+  if (IS_INTERNAL) {
+    trialActive = true; trialEnded = false; el.sessionLabel.textContent = 'TEAM DEMO'; el.countdown.textContent = '—'; show(el.sessionBar, true);
+  } else {
+    if (clock.started && !clock.expired) return;
+    trialActive = true; trialEnded = false; show(el.sessionBar, true); clock.start();
   }
+  show(el.welcomePanel, false); show(el.activityButtons, true); chooseAction(currentAction); setCharacter('greeting');
 }
 
-// ------------------------------------------------------------- UICharacterView
-function characterOnEnable() {
-  setTranscript('');
+function endTrial(expired = false) {
+  if (!trialActive && !expired) return;
+  trialActive = false; trialEnded = expired || trialEnded; endConversation(); camera.stop(); actionDetector.reset(); window.clearTimeout(actionTimer); show(el.sessionBar, false);
+  if (!IS_INTERNAL) clock.stop();
+  if (expired && !IS_INTERNAL) { setCharacter('greeting'); el.characterStatus.textContent = 'Thank you for playing with Lumi!'; show(el.completionDialog, true); }
+  else { show(el.welcomePanel, true); show(el.activityButtons, false); setCharacter('idle'); el.characterStatus.textContent = 'Lumi is ready to play'; }
 }
 
-function characterOpenView() {
-  show(el.bottomButtons, true);
-  show(el.bottomMic, false);
+async function requestSignedUrl(scope: 'public' | 'internal'): Promise<string> {
+  if (scope === 'internal' && !accessToken) throw new Error('Internal sign-in required.');
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (scope === 'internal') headers.Authorization = `Bearer ${accessToken}`;
+  const response = await fetch(VOICE_ENDPOINT, { method: 'POST', headers, body: JSON.stringify({ scope }) });
+  const data = await response.json().catch(() => ({})) as { signedUrl?: string; error?: string };
+  if (!response.ok || !data.signedUrl) throw new Error(data.error || 'Voice is not configured yet.');
+  return data.signedUrl;
 }
 
-function characterCloseView() {
-  endConversation();
-}
-
-function setTranscript(text: string) {
-  el.debugTranscript.textContent = text;
-  show(el.debugBG, text.length > 0);
-}
-
-// ------------------------------------------------------ ElevenLabsConvAIClient
-// Every session gets an id. Callbacks from an older session (after STOP, a view
-// switch or a page hide) compare ids and do nothing, so a late reply can never
-// reopen the UI or overwrite the current state.
-const CONNECT_TIMEOUT_MS = 20000;
-let conversation: VoiceConversation | null = null;
-let connecting = false;
-let quotaExhausted = false;
-let unmuteTimer: number | undefined;
-let sessionId = 0;
-
-function setListeningUI(on: boolean) {
-  // The scene has the "LUMI IS LISTENING..." panel (BottomInteractionMicrophone) but in
-  // cs:7 nothing activates it; we show it while a session is live, as in the Figma mockup.
-  show(el.bottomButtons, !on);
-  show(el.bottomMic, on);
-}
-
-/** Readable text for a failed start or a dropped connection. */
-function describeFailure(err: unknown): string {
-  const name = (err as { name?: string })?.name ?? '';
-  const msg = err instanceof Error ? err.message : String(err ?? '');
-  if (name === 'NotAllowedError' || name === 'SecurityError' || /permission denied|not allowed/i.test(msg))
-    return 'Microphone access is blocked. Allow the microphone for this page in the browser settings, then tap TALK again.';
-  if (name === 'NotFoundError' || name === 'OverconstrainedError')
-    return 'No microphone found. Connect a microphone and tap TALK again.';
-  if (name === 'NotReadableError' || name === 'AbortError')
-    return 'The microphone is in use by another app. Close it and tap TALK again.';
-  if (/quota_exceeded/i.test(msg)) { quotaExhausted = true; return QUOTA_MSG; }
-  if (!navigator.onLine) return 'No internet connection. Connect and tap TALK to try again.';
-  const detail = msg ? `\n(${msg})` : '';
-  return `Lumi is not available right now. Tap TALK to try again.${detail}`;
-}
-
-function preflight(): string | null {
-  if (!window.isSecureContext) return 'Voice needs a secure page (https or localhost).';
-  if (!navigator.mediaDevices?.getUserMedia) return 'This browser cannot use the microphone.';
-  if (!navigator.onLine) return 'No internet connection. Connect and tap TALK to try again.';
-  return null;
+function describeFailure(error: unknown): string {
+  const name = (error as { name?: string })?.name || ''; const message = error instanceof Error ? error.message : String(error || '');
+  if (name === 'NotAllowedError' || /permission denied|not allowed/i.test(message)) return 'Microphone access was denied. You can still use text or movement play.';
+  if (name === 'NotFoundError') return 'No microphone was found. You can still use text or movement play.';
+  if (/quota/i.test(message)) { quotaExhausted = true; return QUOTA_MSG; }
+  return message || 'Lumi is not available right now. Please try again later.';
 }
 
 async function startConversation() {
-  if (quotaExhausted) { setTranscript(QUOTA_MSG); return; }
-  if (conversation || connecting) return; // TALK can be clicked repeatedly
-  const problem = preflight();
-  if (problem) { setTranscript(problem); return; }
-
-  connecting = true;
-  const mySession = ++sessionId;
-  setListeningUI(true);
-  setTranscript('');
-  hint('');
-
-  let timer: number | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = window.setTimeout(() => reject(new Error('Connection timed out')), CONNECT_TIMEOUT_MS);
-  });
-  const starting = Conversation.startSession({
-    agentId: AGENT_ID,
-    connectionType: 'websocket',
-    libsampleratePath: new URL('./vendor/libsamplerate.worklet.js', document.baseURI).href,
-    onConnect: () => console.log('[ElevenLabsConvAI] Connected.'),
-    onMessage: (m) => {
-      if (mySession !== sessionId) return;
-      const role = (m as { role?: string }).role ?? (m.source === 'ai' ? 'agent' : 'user');
-      console.log(`[ElevenLabsConvAI] [${role}] ${m.message}`);
-      if (role === 'agent') setTranscript(m.message);
-    },
-    onModeChange: ({ mode }) => {
-      // preventSpeakerFeedback: mute the mic while Lumi speaks, unmute 0.4 s after.
-      if (mySession !== sessionId || !conversation) return;
-      window.clearTimeout(unmuteTimer);
-      try {
-        if (mode === 'speaking') conversation.setMicMuted(true);
-        else unmuteTimer = window.setTimeout(() => { try { conversation?.setMicMuted(false); } catch { /* session gone */ } }, UNMUTE_DELAY_MS);
-      } catch { /* session gone */ }
-    },
-    onError: (message) => console.warn('[ElevenLabsConvAI] error:', message),
-    onDisconnect: (details) => {
-      if (mySession !== sessionId) return;
-      const wasConnected = conversation !== null;
-      conversation = null;
-      connecting = false;
-      window.clearTimeout(unmuteTimer);
-      setListeningUI(false);
-      if (details.reason === 'user') return;
-      const reason = ('closeReason' in details && details.closeReason) || ('message' in details && details.message) || '';
-      console.warn('[ElevenLabsConvAI] Session ended.', details);
-      if (/quota_exceeded/i.test(reason)) { quotaExhausted = true; setTranscript(QUOTA_MSG); return; }
-      if (wasConnected) setTranscript(reason ? `${CLOSED_MSG}\n(${reason})` : CLOSED_MSG);
-      else setTranscript(describeFailure(new Error(reason)));
-    },
-  }) as Promise<VoiceConversation>;
-
+  if (!trialActive || trialEnded) { hint(IS_INTERNAL ? 'Sign in and start the team demo first.' : 'Start the 1-minute demo first.'); return; }
+  if (quotaExhausted || conversation || connecting) return;
+  if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) { hint('Voice needs a secure page and a microphone-capable browser.'); return; }
+  connecting = true; const mySession = ++sessionId; setCharacter('listening'); show(el.bottomButtons, false); show(el.bottomMic, true); setTranscript(''); hint('Connecting to Lumi…');
+  let timeout: number | undefined;
   try {
-    const conv = await Promise.race([starting, timeout]);
-    if (mySession !== sessionId) { conv.endSession().catch(() => {}); return; }
-    conversation = conv;
-  } catch (err) {
-    // A start that finishes after a timeout or STOP must still be closed.
-    starting.then((c) => c.endSession().catch(() => {}), () => {});
-    if (mySession !== sessionId) return;
-    sessionId++; // ignore late callbacks from the failed attempt
-    connecting = false;
-    setListeningUI(false);
-    setTranscript(describeFailure(err));
-    console.error('[ElevenLabsConvAI]', err);
-  } finally {
-    window.clearTimeout(timer);
-    if (mySession === sessionId) connecting = false;
-  }
+    const signedUrl = await requestSignedUrl(IS_INTERNAL ? 'internal' : 'public');
+    const starting = Conversation.startSession({ signedUrl, connectionType: 'websocket', libsampleratePath: new URL('./vendor/libsamplerate.worklet.js', document.baseURI).href,
+      onConnect: () => { if (mySession === sessionId) { hint(''); setCharacter('listening'); } },
+      onMessage: (message) => { if (mySession !== sessionId) return; const role = (message as { role?: string; source?: string }).role || ((message as { source?: string }).source === 'ai' ? 'agent' : 'user'); if (role === 'agent') setTranscript((message as { message: string }).message); },
+      onModeChange: ({ mode }) => { if (mySession !== sessionId || !conversation) return; window.clearTimeout(unmuteTimer); try { if (mode === 'speaking') { conversation.setMicMuted(true); setCharacter('speaking'); } else { setCharacter('listening'); unmuteTimer = window.setTimeout(() => { try { conversation?.setMicMuted(false); } catch { /* session ended */ } }, UNMUTE_DELAY_MS); } } catch { /* session ended */ } },
+      onError: (message) => { if (mySession === sessionId) hint(describeFailure(message)); },
+      onDisconnect: (details) => { if (mySession !== sessionId) return; const wasConnected = Boolean(conversation); conversation = null; connecting = false; show(el.bottomButtons, true); show(el.bottomMic, false); if (details.reason !== 'user') setTranscript(wasConnected ? CLOSED_MSG : describeFailure(details)); setCharacter('idle'); },
+    }) as Promise<VoiceConversation>;
+    timeout = window.setTimeout(() => { if (mySession === sessionId && !conversation) { sessionId++; connecting = false; show(el.bottomButtons, true); show(el.bottomMic, false); hint('Voice connection timed out.'); } }, CONNECT_TIMEOUT_MS);
+    const connected = await starting;
+    if (mySession !== sessionId || !trialActive || trialEnded) { await connected.endSession().catch(() => {}); return; }
+    conversation = connected;
+  } catch (error) { if (mySession === sessionId) { sessionId++; connecting = false; show(el.bottomButtons, true); show(el.bottomMic, false); setCharacter('idle'); hint(describeFailure(error)); } }
+  finally { window.clearTimeout(timeout); }
 }
 
-function endConversation() {
-  sessionId++;
-  window.clearTimeout(unmuteTimer);
-  const c = conversation;
-  conversation = null;
-  connecting = false;
-  if (c) c.endSession().catch(() => {});
-  setListeningUI(false);
+function endConversation() { sessionId++; window.clearTimeout(unmuteTimer); const current = conversation; conversation = null; connecting = false; if (current) current.endSession().catch(() => {}); show(el.bottomButtons, true); show(el.bottomMic, false); }
+
+function sendTextMessage(text: string) { const message = text.trim(); if (!message) return; if (!conversation) { hint('Open LUMI and tap TALK before sending a text message.'); return; } try { conversation.sendUserMessage(message); hint(''); } catch { hint('Message not sent. Tap TALK to reconnect.'); } }
+
+async function requestMagicLink(email: string) {
+  if (!DEMO_CONFIG.supabaseUrl || !DEMO_CONFIG.supabaseAnonKey) throw new Error('Internal sign-in is not configured yet.');
+  const response = await fetch(`${DEMO_CONFIG.supabaseUrl}/auth/v1/otp`, { method: 'POST', headers: { apikey: DEMO_CONFIG.supabaseAnonKey, 'Content-Type': 'application/json' }, body: JSON.stringify({ email, create_user: false, email_redirect_to: `${window.location.origin}${window.location.pathname}` }) });
+  if (!response.ok) throw new Error('That sign-in link could not be requested.');
 }
 
-function sendTextMessage(text: string) {
-  const t = text.trim();
-  if (!t) return;
-  if (!conversation) {
-    console.warn("[ElevenLabsConvAI] Can't send text: not connected.");
-    hint(connecting ? 'Connecting to Lumi, try again in a moment.' : "Can't send text: not connected. Open LUMI and tap TALK first.");
-    return;
-  }
-  try {
-    conversation.sendUserMessage(t);
-    hint('');
-  } catch (err) {
-    console.warn('[ElevenLabsConvAI] send failed', err);
-    hint('Message not sent. Tap TALK to reconnect.');
-  }
+function handleAuthHash() { const params = new URLSearchParams(window.location.hash.replace(/^#/, '')); const token = params.get('access_token'); if (token) { accessToken = token; sessionStorage.setItem('lumi_internal_access_token', token); history.replaceState(null, '', window.location.pathname); } }
+
+function bootInternal() {
+  handleAuthHash();
+  if (!IS_INTERNAL) return;
+  if (accessToken) { show(el.internalGate, false); beginTrial(); } else { show(el.internalGate, true); el.internalLoginStatus.textContent = DEMO_CONFIG.supabaseAnonKey ? '' : 'Internal access is unavailable until Supabase Auth is configured.'; }
 }
 
-let hintTimer: number | undefined;
-function hint(text: string) {
-  el.debugHint.textContent = text;
-  show(el.debugHint, !!text);
-  window.clearTimeout(hintTimer);
-  if (text) hintTimer = window.setTimeout(() => show(el.debugHint, false), 4000);
-}
+el.playButton.addEventListener('click', openPlayView); el.lumiButton.addEventListener('click', openLumiView); el.startDemoButton.addEventListener('click', beginTrial); el.stopDemoButton.addEventListener('click', () => endTrial(false));
+document.querySelectorAll<HTMLButtonElement>('.act').forEach((button) => button.addEventListener('click', () => chooseAction(Number(button.dataset.activity))));
+el.cameraButton.addEventListener('click', () => { if (trialActive) void camera.start(); }); el.stopCameraButton.addEventListener('click', () => camera.stop()); el.manualSuccessButton.addEventListener('click', () => acknowledgeAction(false));
+el.talkButton.addEventListener('click', () => void startConversation()); el.stopButton.addEventListener('click', endConversation); el.typeButton.addEventListener('click', () => { el.debugInput.hidden = !el.debugInput.hidden; if (!el.debugInput.hidden) el.debugText.focus(); });
+el.debugInput.addEventListener('submit', (event) => { event.preventDefault(); sendTextMessage(el.debugText.value); el.debugText.value = ''; });
+el.closeCompletionButton.addEventListener('click', () => { show(el.completionDialog, false); show(el.welcomePanel, true); show(el.activityButtons, false); }); el.restartDemoButton.addEventListener('click', () => { show(el.completionDialog, false); beginTrial(); });
+el.internalLoginForm.addEventListener('submit', async (event) => { event.preventDefault(); el.internalLoginStatus.textContent = 'Sending sign-in link…'; try { await requestMagicLink(el.internalEmail.value.trim()); el.internalLoginStatus.textContent = 'Check your email for the one-time sign-in link.'; } catch (error) { el.internalLoginStatus.textContent = describeFailure(error); } });
+el.internalLogoutButton.addEventListener('click', () => { accessToken = ''; sessionStorage.removeItem('lumi_internal_access_token'); endTrial(false); show(el.internalGate, true); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { endConversation(); camera.stop(); } else if (!IS_INTERNAL) clock.reconcile(); });
+window.addEventListener('pagehide', () => { endConversation(); camera.dispose(); });
 
-// ---------------------------------------------------------------------- wiring
-el.playButton.addEventListener('click', playMode);
-el.lumiButton.addEventListener('click', lumiMode);
-document.querySelectorAll<HTMLButtonElement>('.act').forEach((b) =>
-  b.addEventListener('click', () => selectActivity(Number(b.dataset.activity))),
-);
-// PlayActivityInstructions(), StartActivity(), TYPE, Scores and Settings have no
-// behaviour in the source, so their buttons do nothing here either.
-el.talkButton.addEventListener('click', () => void startConversation());
-// iOS Safari: the SDK unlocks audio on the tap itself (capture-phase listener
-// installed on import), so startConversation must stay a direct click handler.
-el.stopButton.addEventListener('click', endConversation);
-el.debugInput.addEventListener('submit', (e) => {
-  e.preventDefault();
-  sendTextMessage(el.debugText.value);
-  el.debugText.value = '';
-});
-
-// Leaving the page (tab hidden, app switched, navigation) ends the session so the
-// microphone is released and no credits are used in the background.
-window.addEventListener('pagehide', endConversation);
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') endConversation(); });
-
-// expose for automated tests
-(window as unknown as { lumi: object }).lumi = { get connected() { return !!conversation; }, get mode() { return viewMode; } };
+openPlayView(); bootInternal();
+(window as unknown as { lumi: object }).lumi = { get connected() { return Boolean(conversation); }, get mode() { return viewMode; }, get trialActive() { return trialActive; }, get trialEnded() { return trialEnded; }, get internal() { return IS_INTERNAL; }, startDemo: beginTrial, stopDemo: () => endTrial(false) };

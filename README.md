@@ -3,9 +3,9 @@
 Approved V6 design, five original mascot poses, five languages and pointer/touch dragging. Plain HTML/CSS/JavaScript; no production dependencies or paid service required.
 
 - Website: https://DrWangZezhao.github.io/laughing-lumi-early-access-demo/
-- Real signup: **ON**. The public form validates in the browser, then stores adult early-access registrations through the Supabase Edge Function in the EU (Ireland) project. The future demo redirect remains OFF until the demo route is ready.
-- Demo redirect: **OFF**. `demo/index.html` reserves the future route.
-- Supabase: source prepared, **not provisioned or verified against a live project**.
+- Real signup: guarded by server-side activation and privacy gates. The public form submits only to the Supabase Edge Function when those gates are explicitly enabled.
+- Demo routes: `demo/` is the public 60-second experience; `team-demo/` is the shared build with server-authorized internal voice access.
+- Supabase: source includes registration, signed voice-session issuance, and a durable Google Sheets outbox; deployment and live verification remain manual.
 
 ## Preview and checks
 
@@ -21,7 +21,7 @@ Open http://localhost:8765. No npm install is needed for production or the core 
 
 ## Files
 
-`index.html`, `css/styles.css`, `js/lumi.js`: original V6 content/animations, with narrow-screen and bubble-boundary fixes. `assets/`: losslessly extracted original logo and five PNG poses. `js/signup.js` / `signup-core.js`: submission UX. `js/config.js`: public activation flags. `privacy/`: current privacy information. `docs/PRIVACY-TEMPLATE.html`: notice template to complete before collection. `supabase/`: SQL and Edge Function source. `docs/`: deployment, admin and verification guidance.
+`index.html`, `css/styles.css`, `js/lumi.js`: original V6 content/animations, with narrow-screen and bubble-boundary fixes. `apps/lumi/`: the shared Vite demo, MediaPipe movement detectors, local camera pipeline, and signed ElevenLabs client. `assets/`: original logo and five PNG poses. `js/signup.js` / `signup-core.js`: registration UX. `supabase/`: guarded registration, voice authorization, and Sheet outbox functions. `docs/ACTIVATION_CHECKLIST.md`: required manual activation and verification steps.
 
 ## Updating with Codex
 
