@@ -23,14 +23,15 @@ npm run build      # type-checks, builds into ../../demo/, inlines JS+CSS into d
 Then commit `apps/lumi/` and `demo/` together. Versions are pinned in `package-lock.json`.
 
 - `npm run dev` serves the app at http://localhost:5173 for development.
-- Voice requests a short-lived signed WebSocket URL from the Supabase `voice-session` function
-  and then uses the pinned `@elevenlabs/client` SDK. Agent IDs and the ElevenLabs API key stay
-  server-side. Both browser routes use the public agent without login; the internal agent
-  remains restricted by the server-side authorization check.
-- The public function URL belongs in `public/voice-config.js` only after the function and
-  provider agents are deployed and verified. The committed blank endpoint deliberately
-  reports voice as inactive. Camera movement recognition works independently and remains
-  active while a configured voice conversation is connecting or running.
+- The two browser routes use the public ElevenLabs agent ID already serialized in Henri's
+  Unity scene, with the pinned `@elevenlabs/client` SDK and no login. No provider API key
+  is included in the browser. The optional Supabase `voice-session` path remains available
+  for a private agent, but its internal scope still requires server-side authorization.
+  Camera movement recognition works independently and remains active while voice connects
+  or runs. The public agent owner controls its availability, usage and domain settings.
 - Movement recognition uses the pinned `@mediapipe/tasks-vision` Pose Landmarker Lite model,
   with locally bundled WASM and model files. Camera frames and landmarks remain in the browser.
+  In a guided voice session, a camera-verified action sends only a completion event to the
+  public voice agent, which can praise the player and speak the next instruction. Manual
+  unverified completion never sends that event. The first rounds are hands-up and wave.
 - Voice needs https or localhost (microphone rule); the UI also works from a local file.

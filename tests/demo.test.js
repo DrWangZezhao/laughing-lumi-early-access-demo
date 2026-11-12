@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ACTIONS, GUIDED_RAISE_HAND, actionFromAgentPrompt, createActionDetector } from '../apps/lumi/src/vision/actions.js';
 import { createSessionClock } from '../apps/lumi/src/session.js';
+import { GUIDED_SEQUENCE, completionEvent } from '../apps/lumi/src/guided-game.js';
 import { createVoiceHandler } from '../supabase/functions/voice-session/handler.js';
 import { createSyncHandler } from '../supabase/functions/sync-sheets/handler.js';
 
@@ -24,17 +25,21 @@ function pose(overrides = {}) {
 test('all five valid gestures require meaningful temporal or geometric evidence', () => {
   for (const action of ACTIONS) {
     const detector = createActionDetector(action.id);
+    let detected = false;
     if (action.id === 'wave') {
-      for (const x of [.22, .52, .22, .52]) detector.update(pose({ leftWrist: { x, y: .18 } }));
+      for (const x of [.30, .32, .36, .40, .44, .42, .38, .34, .30, .32, .36, .40, .44, .42, .38, .34, .30])
+        detected ||= detector.update(pose({ leftWrist: { x, y: .18 } })).detected;
     } else if (action.id === 'hands-up') {
-      for (let i = 0; i < 7; i++) detector.update(pose({ leftWrist: { x: .4, y: .1 }, rightWrist: { x: .6, y: .1 } }));
+      for (let i = 0; i < 7; i++) detected ||= detector.update(pose({ leftWrist: { x: .4, y: .1 }, rightWrist: { x: .6, y: .1 } })).detected;
     } else if (action.id === 'snowflake') {
-      for (let i = 0; i < 7; i++) detector.update(pose({ leftElbow: { x: .18, y: .4 }, rightElbow: { x: .82, y: .4 } }));
+      for (let i = 0; i < 7; i++) detected ||= detector.update(pose({ leftElbow: { x: .18, y: .4 }, rightElbow: { x: .82, y: .4 } })).detected;
     } else if (action.id === 'sway') {
-      for (const x of [.43, .57, .43, .57]) detector.update(pose({ leftShoulder: { x: x - .1, y: .4 }, rightShoulder: { x: x + .1, y: .4 } }));
+      for (const shift of [0, .04, .08, .12, .08, .04, 0, -.04, -.08, -.04, 0, .04, .08])
+        detected ||= detector.update(pose({ leftShoulder: { x: .4 + shift }, rightShoulder: { x: .6 + shift } })).detected;
     } else {
-      for (let i = 0; i < 7; i++) detector.update(pose({ leftWrist: { x: .46, y: .18 }, rightWrist: { x: .54, y: .18 } }));
+      for (let i = 0; i < 7; i++) detected ||= detector.update(pose({ leftWrist: { x: .46, y: .18 }, rightWrist: { x: .54, y: .18 } })).detected;
     }
+    assert.equal(detected, true, `${action.id} should be recognized`);
     assert.equal(detector.update(pose()).status, 'not-detected');
     detector.reset();
     assert.equal(detector.update().status, 'camera-unavailable');
@@ -122,8 +127,21 @@ test('a one-frame landmark wobble does not restart a held raise-hand gesture', (
 test('agent movement wording selects the correct local detector without sharing vision data', () => {
   assert.equal(actionFromAgentPrompt('Please raise one hand above your shoulder.').id, 'raise-hand');
   assert.equal(actionFromAgentPrompt('Lift both hands above your shoulders.').id, 'hands-up');
+  assert.equal(actionFromAgentPrompt('Now please raise your hands.').id, 'hands-up');
+  assert.equal(actionFromAgentPrompt('现在请你举起你的双手。').id, 'hands-up');
   assert.equal(actionFromAgentPrompt('请举起你的手。').id, 'raise-hand');
+  assert.equal(actionFromAgentPrompt('Great job with hands up! Next, wave hello.').id, 'wave');
+  assert.equal(actionFromAgentPrompt('Wonderful wave! Now make a snowflake pose.').id, 'snowflake');
   assert.equal(actionFromAgentPrompt('Can we talk about snow?'), null);
+});
+
+test('guided game starts with both hands and sends only a completion event to voice', () => {
+  assert.deepEqual(GUIDED_SEQUENCE.map((action) => action.id), ['hands-up', 'wave', 'snowflake', 'sway', 'head-touch']);
+  const event = completionEvent(GUIDED_SEQUENCE[1]);
+  assert.match(event, /current movement is complete/i);
+  assert.match(event, /wave side to side/i);
+  assert.doesNotMatch(event, /image|video|landmark|confidence|keypoint/i);
+  assert.match(completionEvent(), /game is finished/i);
 });
 
 test('public session clock expires from elapsed monotonic time and reconciles after a pause', () => {
@@ -144,6 +162,13 @@ test('voice session selects public agent server-side and rejects internal bypass
   assert.equal(publicResponse.status, 200); assert.match(providerUrl, /agent_id=public-agent/);
   assert.equal((await handler(voiceReq({ scope: 'internal' }))).status, 401);
   assert.equal((await handler(voiceReq({ scope: 'internal' }, { authorization: 'Bearer forged' }))).status, 403);
+});
+
+test('public voice can start before a separate internal agent is configured', async () => {
+  const env = { ...voiceEnv, ELEVENLABS_INTERNAL_AGENT_ID: '', SUPABASE_URL: '' };
+  const handler = createVoiceHandler(env, async () => Response.json({ signed_url: 'wss://api.elevenlabs.test/public' }));
+  assert.equal((await handler(voiceReq({ scope: 'public' }))).status, 200);
+  assert.equal((await handler(voiceReq({ scope: 'internal' }))).status, 503);
 });
 
 test('voice session verifies internal identity before selecting internal agent', async () => {

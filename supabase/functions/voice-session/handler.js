@@ -22,7 +22,6 @@ export function createVoiceHandler(env, fetcher = fetch, now = () => Date.now())
     const cors = { 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'authorization, content-type' };
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { ...jsonHeaders, ...cors } });
     if (request.method !== 'POST') return response(405, { error: 'Method not allowed' }, cors);
-    if (!env.ELEVENLABS_API_KEY || !env.ELEVENLABS_PUBLIC_AGENT_ID || !env.ELEVENLABS_INTERNAL_AGENT_ID || !env.SUPABASE_URL) return response(503, { error: 'Voice is not configured' }, cors);
 
     const key = origin;
     const windowStart = now() - 60_000;
@@ -34,10 +33,12 @@ export function createVoiceHandler(env, fetcher = fetch, now = () => Date.now())
     try { body = await request.json(); } catch { return response(400, { error: 'Invalid JSON' }, cors); }
     const scope = body?.scope === 'internal' ? 'internal' : body?.scope === 'public' ? 'public' : null;
     if (!scope) return response(400, { error: 'Invalid session scope' }, cors);
+    if (!env.ELEVENLABS_API_KEY || (scope === 'public' ? !env.ELEVENLABS_PUBLIC_AGENT_ID : !env.ELEVENLABS_INTERNAL_AGENT_ID))
+      return response(503, { error: 'Voice is not configured' }, cors);
 
     if (scope === 'internal') {
       const token = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
-      if (!token || !env.SUPABASE_ANON_KEY) return response(401, { error: 'Internal sign-in required' }, cors);
+      if (!token || !env.SUPABASE_ANON_KEY || !env.SUPABASE_URL) return response(401, { error: 'Internal sign-in required' }, cors);
       try {
         const userResponse = await fetcher(`${env.SUPABASE_URL}/auth/v1/user`, { headers: { apikey: env.SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(8000) });
         if (!userResponse.ok) return response(401, { error: 'Internal sign-in required' }, cors);
