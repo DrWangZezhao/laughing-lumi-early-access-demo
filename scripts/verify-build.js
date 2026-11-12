@@ -10,6 +10,7 @@ const poses = [
   'lumi-peek.png',
 ];
 const unityPoses = ['lumi-idle.png', 'lumi-wave.png', 'lumi-listen.png', 'lumi-speak.png', 'lumi-move.png'];
+const unityFrames = { idle: 32, wave: 32, speak: 28, move: 16 };
 const runtimeAssets = [
   'voice-config.js',
   'art/logo.png',
@@ -25,6 +26,7 @@ const runtimeAssets = [
 const requiredReferences = [
   './voice-config.js',
   './character/unity/',
+  './character/unity/frames/',
   './models/pose_landmarker_lite.task',
   './vendor/mediapipe/',
   './vendor/libsamplerate.worklet.js',
@@ -51,16 +53,18 @@ for (const route of routes) {
     const digest = (data) => createHash('sha256').update(data).digest('hex');
     if (digest(original) !== digest(published)) throw new Error(`dist/${route}/character/unity/${pose} differs from the Unity render`);
   }
+  for (const [motion, count] of Object.entries(unityFrames)) {
+    for (let frame = 0; frame < count; frame++) {
+      const filename = `${motion}/${String(frame).padStart(2, '0')}.png`;
+      const original = await readFile(`apps/lumi/public/character/unity/frames/${filename}`);
+      const published = await readFile(`dist/${route}/character/unity/frames/${filename}`);
+      if (!original.equals(published)) throw new Error(`dist/${route}/character/unity/frames/${filename} differs from the Unity render`);
+    }
+  }
 
   for (const reference of requiredReferences) {
     if (!html.includes(reference)) {
       throw new Error(`${htmlPath} is missing required relative reference: ${reference}`);
-    }
-  }
-
-  for (const pose of unityPoses) {
-    if (!html.includes(pose)) {
-      throw new Error(`${htmlPath} is missing pose reference: ${pose}`);
     }
   }
 

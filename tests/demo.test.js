@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ACTIONS, createActionDetector } from '../apps/lumi/src/vision/actions.js';
+import { ACTIONS, GUIDED_RAISE_HAND, actionFromAgentPrompt, createActionDetector } from '../apps/lumi/src/vision/actions.js';
 import { createSessionClock } from '../apps/lumi/src/session.js';
 import { createVoiceHandler } from '../supabase/functions/voice-session/handler.js';
 import { createSyncHandler } from '../supabase/functions/sync-sheets/handler.js';
@@ -82,6 +82,48 @@ test('wave detector rejects a stationary raised hand and low-confidence landmark
   const lowConfidence = pose({ leftWrist: { x: .22, y: .18 } });
   lowConfidence[15].visibility = .1;
   assert.equal(detector.update(lowConfidence).status, 'not-detected');
+});
+
+test('wave recognizes a moderate, repeated hand wave without camera motion', () => {
+  const detector = createActionDetector('wave');
+  let detected = false;
+  for (const x of [.30, .32, .36, .40, .44, .42, .38, .34, .30, .32, .36, .40, .44, .42, .38, .34, .30]) {
+    detected ||= detector.update(pose({ leftWrist: { x, y: .18 } })).detected;
+  }
+  assert.equal(detected, true);
+});
+
+test('spoken first activity accepts either raised hand but rejects an arm at rest', () => {
+  for (const side of ['left', 'right']) {
+    const detector = createActionDetector(GUIDED_RAISE_HAND.id);
+    for (let i = 0; i < 10; i++) assert.equal(detector.update(pose()).detected, false);
+    let detected = false;
+    for (let i = 0; i < 5; i++) detected ||= detector.update(pose({ [`${side}Wrist`]: { y: .22 } })).detected;
+    assert.equal(detected, true);
+  }
+  const detector = createActionDetector(GUIDED_RAISE_HAND.id);
+  const lowConfidence = pose({ leftWrist: { y: .1 } });
+  lowConfidence[15].visibility = .1;
+  for (let i = 0; i < 10; i++) assert.equal(detector.update(lowConfidence).detected, false);
+  detector.update([]);
+  assert.equal(detector.update(pose({ leftWrist: { y: .22 } })).detected, false);
+});
+
+test('a one-frame landmark wobble does not restart a held raise-hand gesture', () => {
+  const detector = createActionDetector(GUIDED_RAISE_HAND.id);
+  const raised = () => pose({ leftWrist: { y: .22 } });
+  for (let i = 0; i < 3; i++) assert.equal(detector.update(raised()).detected, false);
+  assert.equal(detector.update(pose()).detected, false);
+  assert.equal(detector.update(raised()).detected, false);
+  assert.equal(detector.update(raised()).detected, false);
+  assert.equal(detector.update(raised()).detected, true);
+});
+
+test('agent movement wording selects the correct local detector without sharing vision data', () => {
+  assert.equal(actionFromAgentPrompt('Please raise one hand above your shoulder.').id, 'raise-hand');
+  assert.equal(actionFromAgentPrompt('Lift both hands above your shoulders.').id, 'hands-up');
+  assert.equal(actionFromAgentPrompt('请举起你的手。').id, 'raise-hand');
+  assert.equal(actionFromAgentPrompt('Can we talk about snow?'), null);
 });
 
 test('public session clock expires from elapsed monotonic time and reconciles after a pause', () => {
