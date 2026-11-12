@@ -33,4 +33,7 @@ Then commit `apps/lumi/` and `demo/` together. Versions are pinned in `package-l
   active while a configured voice conversation is connecting or running.
 - Movement recognition uses the pinned `@mediapipe/tasks-vision` Pose Landmarker Lite model,
   with locally bundled WASM and model files. Camera frames and landmarks remain in the browser.
+  In a guided voice session, a camera-verified action sends only a completion event to the
+  public voice agent, which can praise the player and speak the next instruction. Manual
+  unverified completion never sends that event. The first rounds are hands-up and wave.
 - Voice needs https or localhost (microphone rule); the UI also works from a local file.

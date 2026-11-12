@@ -15,6 +15,7 @@ const runtimeAssets = [
   'voice-config.js',
   'art/logo.png',
   'art/letters.png',
+  'art/camera.svg',
   'art/winter-scene.jpg',
   'models/pose_landmarker_lite.task',
   'vendor/libsamplerate.worklet.js',

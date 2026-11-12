@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ACTIONS, GUIDED_RAISE_HAND, actionFromAgentPrompt, createActionDetector } from '../apps/lumi/src/vision/actions.js';
 import { createSessionClock } from '../apps/lumi/src/session.js';
+import { GUIDED_SEQUENCE, completionEvent } from '../apps/lumi/src/guided-game.js';
 import { createVoiceHandler } from '../supabase/functions/voice-session/handler.js';
 import { createSyncHandler } from '../supabase/functions/sync-sheets/handler.js';
 
@@ -122,8 +123,21 @@ test('a one-frame landmark wobble does not restart a held raise-hand gesture', (
 test('agent movement wording selects the correct local detector without sharing vision data', () => {
   assert.equal(actionFromAgentPrompt('Please raise one hand above your shoulder.').id, 'raise-hand');
   assert.equal(actionFromAgentPrompt('Lift both hands above your shoulders.').id, 'hands-up');
+  assert.equal(actionFromAgentPrompt('Now please raise your hands.').id, 'hands-up');
+  assert.equal(actionFromAgentPrompt('现在请你举起你的双手。').id, 'hands-up');
   assert.equal(actionFromAgentPrompt('请举起你的手。').id, 'raise-hand');
+  assert.equal(actionFromAgentPrompt('Great job with hands up! Next, wave hello.').id, 'wave');
+  assert.equal(actionFromAgentPrompt('Wonderful wave! Now make a snowflake pose.').id, 'snowflake');
   assert.equal(actionFromAgentPrompt('Can we talk about snow?'), null);
+});
+
+test('guided game starts with both hands and sends only a completion event to voice', () => {
+  assert.deepEqual(GUIDED_SEQUENCE.map((action) => action.id), ['hands-up', 'wave', 'snowflake', 'sway', 'head-touch']);
+  const event = completionEvent(GUIDED_SEQUENCE[1]);
+  assert.match(event, /current movement is complete/i);
+  assert.match(event, /wave side to side/i);
+  assert.doesNotMatch(event, /image|video|landmark|confidence|keypoint/i);
+  assert.match(completionEvent(), /game is finished/i);
 });
 
 test('public session clock expires from elapsed monotonic time and reconciles after a pause', () => {
@@ -144,6 +158,13 @@ test('voice session selects public agent server-side and rejects internal bypass
   assert.equal(publicResponse.status, 200); assert.match(providerUrl, /agent_id=public-agent/);
   assert.equal((await handler(voiceReq({ scope: 'internal' }))).status, 401);
   assert.equal((await handler(voiceReq({ scope: 'internal' }, { authorization: 'Bearer forged' }))).status, 403);
+});
+
+test('public voice can start before a separate internal agent is configured', async () => {
+  const env = { ...voiceEnv, ELEVENLABS_INTERNAL_AGENT_ID: '', SUPABASE_URL: '' };
+  const handler = createVoiceHandler(env, async () => Response.json({ signed_url: 'wss://api.elevenlabs.test/public' }));
+  assert.equal((await handler(voiceReq({ scope: 'public' }))).status, 200);
+  assert.equal((await handler(voiceReq({ scope: 'internal' }))).status, 503);
 });
 
 test('voice session verifies internal identity before selecting internal agent', async () => {

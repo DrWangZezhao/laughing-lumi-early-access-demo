@@ -16,13 +16,21 @@ export const GUIDED_RAISE_HAND = Object.freeze({
 
 export function actionFromAgentPrompt(text) {
   const prompt = String(text || '').toLowerCase();
-  if (/\b(wave|waving)\b|挥手/u.test(prompt)) return ACTIONS[0];
-  if (/\b(both hands|two hands|hands up)\b|双手|两只手/u.test(prompt)) return ACTIONS[1];
-  if (/\b(snowflake|arms out|stretch both arms)\b|雪花|张开双臂/u.test(prompt)) return ACTIONS[2];
-  if (/\b(sway|lean left|lean right)\b|摇摆|左右摆/u.test(prompt)) return ACTIONS[3];
-  if (/\b(touch your head|hands on your head)\b|摸头|碰头/u.test(prompt)) return ACTIONS[4];
-  if (/\b(raise|lift|put up).{0,30}\b(hand|arm)\b|举.{0,6}手/u.test(prompt)) return GUIDED_RAISE_HAND;
-  return null;
+  const candidates = [
+    [ACTIONS[0], /\b(wave|waving)\b|挥手/gu],
+    [ACTIONS[1], /\b(both hands|two hands|hands up|raise your hands|lift your hands|raise both arms|lift both arms)\b|双手|两只手/gu],
+    [ACTIONS[2], /\b(snowflake|arms out|stretch both arms)\b|雪花|张开双臂/gu],
+    [ACTIONS[3], /\b(sway|lean left|lean right)\b|摇摆|左右摆/gu],
+    [ACTIONS[4], /\b(touch your head|hands on your head)\b|摸头|碰头/gu],
+    [GUIDED_RAISE_HAND, /\b(raise|lift|put up).{0,30}\b(hand|arm)\b|举.{0,6}手/gu],
+  ];
+  let latest = null;
+  for (const [action, pattern] of candidates) {
+    for (const match of prompt.matchAll(pattern)) {
+      if (!latest || match.index > latest.index) latest = { action, index: match.index };
+    }
+  }
+  return latest?.action || null;
 }
 
 const I = Object.freeze({
