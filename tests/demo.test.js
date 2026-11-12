@@ -25,17 +25,21 @@ function pose(overrides = {}) {
 test('all five valid gestures require meaningful temporal or geometric evidence', () => {
   for (const action of ACTIONS) {
     const detector = createActionDetector(action.id);
+    let detected = false;
     if (action.id === 'wave') {
-      for (const x of [.22, .52, .22, .52]) detector.update(pose({ leftWrist: { x, y: .18 } }));
+      for (const x of [.30, .32, .36, .40, .44, .42, .38, .34, .30, .32, .36, .40, .44, .42, .38, .34, .30])
+        detected ||= detector.update(pose({ leftWrist: { x, y: .18 } })).detected;
     } else if (action.id === 'hands-up') {
-      for (let i = 0; i < 7; i++) detector.update(pose({ leftWrist: { x: .4, y: .1 }, rightWrist: { x: .6, y: .1 } }));
+      for (let i = 0; i < 7; i++) detected ||= detector.update(pose({ leftWrist: { x: .4, y: .1 }, rightWrist: { x: .6, y: .1 } })).detected;
     } else if (action.id === 'snowflake') {
-      for (let i = 0; i < 7; i++) detector.update(pose({ leftElbow: { x: .18, y: .4 }, rightElbow: { x: .82, y: .4 } }));
+      for (let i = 0; i < 7; i++) detected ||= detector.update(pose({ leftElbow: { x: .18, y: .4 }, rightElbow: { x: .82, y: .4 } })).detected;
     } else if (action.id === 'sway') {
-      for (const x of [.43, .57, .43, .57]) detector.update(pose({ leftShoulder: { x: x - .1, y: .4 }, rightShoulder: { x: x + .1, y: .4 } }));
+      for (const shift of [0, .04, .08, .12, .08, .04, 0, -.04, -.08, -.04, 0, .04, .08])
+        detected ||= detector.update(pose({ leftShoulder: { x: .4 + shift }, rightShoulder: { x: .6 + shift } })).detected;
     } else {
-      for (let i = 0; i < 7; i++) detector.update(pose({ leftWrist: { x: .46, y: .18 }, rightWrist: { x: .54, y: .18 } }));
+      for (let i = 0; i < 7; i++) detected ||= detector.update(pose({ leftWrist: { x: .46, y: .18 }, rightWrist: { x: .54, y: .18 } })).detected;
     }
+    assert.equal(detected, true, `${action.id} should be recognized`);
     assert.equal(detector.update(pose()).status, 'not-detected');
     detector.reset();
     assert.equal(detector.update().status, 'camera-unavailable');

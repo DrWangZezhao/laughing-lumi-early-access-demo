@@ -40,6 +40,11 @@ for (const route of routes) {
   for (const asset of [...runtimeAssets, ...poses.map((pose) => `character/${pose}`), ...unityPoses.map((pose) => `character/unity/${pose}`)]) {
     await access(`dist/${route}/${asset}`);
   }
+  const voiceConfig = await readFile(`dist/${route}/voice-config.js`, 'utf8');
+  const sourceVoiceConfig = await readFile('apps/lumi/public/voice-config.js', 'utf8');
+  if (voiceConfig !== sourceVoiceConfig || !/publicAgentId:\s*'agent_[a-z0-9]+'/u.test(voiceConfig)) {
+    throw new Error(`dist/${route}/voice-config.js does not contain the Unity public agent configuration`);
+  }
   for (const pose of poses) {
     const original = await readFile(`assets/${pose}`);
     const published = await readFile(`dist/${route}/character/${pose}`);

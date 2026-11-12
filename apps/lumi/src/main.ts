@@ -7,7 +7,8 @@ import { GUIDED_SEQUENCE, completionEvent } from './guided-game.js';
 
 const IS_INTERNAL = /\/team-demo\/?$/u.test(window.location.pathname);
 const SURVEY_URL = 'https://script.google.com/macros/s/AKfycbzhraBB4vfYdVVjBPNGkVEjB6rZ4o1G1FVc2nlwrHprgm5ZehF2f0isWVlquAwJrT9LlA/exec?src=homepage';
-const DEMO_CONFIG = (window as unknown as { LUMI_DEMO_CONFIG?: { voiceEndpoint?: string } }).LUMI_DEMO_CONFIG ?? {};
+const DEMO_CONFIG = (window as unknown as { LUMI_DEMO_CONFIG?: { publicAgentId?: string; voiceEndpoint?: string } }).LUMI_DEMO_CONFIG ?? {};
+const PUBLIC_AGENT_ID = DEMO_CONFIG.publicAgentId?.trim() || '';
 const VOICE_ENDPOINT = DEMO_CONFIG.voiceEndpoint?.trim() || '';
 const CONNECT_TIMEOUT_MS = 20000;
 const UNMUTE_DELAY_MS = 400;
@@ -39,6 +40,8 @@ let actionArmed = false;
 let awaitingGuidedPrompt = false;
 let guidedIndex = -1;
 let pendingAgentAction: Activity | null = null;
+let promptRetryPending = false;
+let promptRetriedIndex = -1;
 let conversation: VoiceConversation | null = null;
 let connecting = false;
 let voiceMode: 'idle' | 'listening' | 'speaking' = 'idle';
@@ -256,25 +259,39 @@ function onAgentMessage(text: string) {
   if (!awaitingGuidedPrompt || currentAction || !trialActive) return;
   const expected = GUIDED_SEQUENCE[guidedIndex];
   const requested = actionFromAgentPrompt(text) || (/(please|now|next|try|请|现在|接下来)/iu.test(text) ? pendingAgentAction : null);
-  if (!expected || requested?.id !== expected.id) return;
+  if (!expected) return;
+  if (requested?.id !== expected.id) {
+    if (promptRetriedIndex !== guidedIndex) { promptRetriedIndex = guidedIndex; promptRetryPending = true; }
+    return;
+  }
+  promptRetryPending = false;
   awaitingGuidedPrompt = false; pendingAgentAction = null;
   activateAction(expected, true);
   openPlayView();
+}
+
+function flushPromptRetry() {
+  if (!promptRetryPending || voiceMode !== 'listening' || !conversation || !trialActive) return;
+  const expected = GUIDED_SEQUENCE[guidedIndex];
+  promptRetryPending = false;
+  if (!expected) return;
+  try { conversation.sendUserMessage(`I am ready. Please say the movement instruction aloud now: ${expected.instruction} My camera checks it locally and will tell you when I finish.`); }
+  catch { hint('Lumi could not receive the movement prompt. Try TALK again.'); }
 }
 
 async function startConversation() {
   if (!trialActive || trialEnded) { hint('Start the demo first.'); return; }
   if (quotaExhausted) { setVoiceStatus(QUOTA_MSG); return; }
   if (conversation || connecting) return;
-  if (!VOICE_ENDPOINT) { const message = 'Voice is not activated yet. Movement play is still available.'; setVoiceStatus(message); hint(message); return; }
+  if (!PUBLIC_AGENT_ID && !VOICE_ENDPOINT) { const message = 'Voice is not activated yet. Movement play is still available.'; setVoiceStatus(message); hint(message); return; }
   if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) { const message = 'Voice needs a secure page and a microphone-capable browser.'; setVoiceStatus(message); hint(message); return; }
-  connecting = true; awaitingGuidedPrompt = true; guidedIndex = 0; pendingAgentAction = null; const mySession = ++sessionId; const request = new AbortController(); voiceRequest = request; voiceMode = 'listening'; setCharacter('listening'); syncVoiceControls(); setTranscript(''); setVoiceStatus('Connecting to Lumi…'); hint('Connecting to Lumi…');
+  connecting = true; awaitingGuidedPrompt = true; guidedIndex = 0; pendingAgentAction = null; promptRetryPending = false; promptRetriedIndex = -1; const mySession = ++sessionId; const request = new AbortController(); voiceRequest = request; voiceMode = 'listening'; setCharacter('listening'); syncVoiceControls(); setTranscript(''); setVoiceStatus('Connecting to Lumi…'); hint('Connecting to Lumi…');
   let timeout: number | undefined;
   try {
-    const signedUrl = await requestSignedUrl(request.signal);
+    const access = PUBLIC_AGENT_ID ? { agentId: PUBLIC_AGENT_ID } : { signedUrl: await requestSignedUrl(request.signal) };
     if (voiceRequest === request) voiceRequest = null;
     if (mySession !== sessionId || !trialActive || trialEnded) return;
-    const starting = Conversation.startSession({ signedUrl, connectionType: 'websocket', libsampleratePath: new URL('./vendor/libsamplerate.worklet.js', document.baseURI).href,
+    const starting = Conversation.startSession({ ...access, connectionType: 'websocket', libsampleratePath: new URL('./vendor/libsamplerate.worklet.js', document.baseURI).href,
       clientTools: { showMovement: ({ activity }: { activity?: string }) => {
         if (mySession !== sessionId || !trialActive || trialEnded) return 'The demo has ended.';
         const action = activity === GUIDED_RAISE_HAND.id ? GUIDED_RAISE_HAND : ACTIONS.find((item) => item.id === activity);
@@ -284,15 +301,16 @@ async function startConversation() {
       } },
       onConnect: () => { if (mySession === sessionId) { hint(''); setVoiceStatus(isLumiSpeaking() ? 'Lumi is speaking' : 'Voice on · listening'); setCharacter(isLumiSpeaking() ? 'speaking' : 'listening'); } },
       onMessage: (message) => { if (mySession !== sessionId) return; const role = (message as { role?: string; source?: string }).role || ((message as { source?: string }).source === 'ai' ? 'agent' : 'user'); if (role === 'agent') onAgentMessage((message as { message: string }).message); },
-      onModeChange: ({ mode }) => { if (mySession !== sessionId) return; window.clearTimeout(unmuteTimer); if (mode === 'speaking') { voiceMode = 'speaking'; actionArmed = false; setVoiceStatus('Lumi is speaking'); setCharacter('speaking'); try { conversation?.setMicMuted(true); } catch { /* session ended */ } } else { voiceMode = 'listening'; if (currentAction && actionDetector) { actionDetector.reset(); actionArmed = true; } setVoiceStatus('Voice on · listening'); setCharacter(activityCharacterState()); unmuteTimer = window.setTimeout(() => { try { conversation?.setMicMuted(false); } catch { /* session ended */ } }, UNMUTE_DELAY_MS); } },
+      onModeChange: ({ mode }) => { if (mySession !== sessionId) return; window.clearTimeout(unmuteTimer); if (mode === 'speaking') { voiceMode = 'speaking'; actionArmed = false; setVoiceStatus('Lumi is speaking'); setCharacter('speaking'); try { conversation?.setMicMuted(true); } catch { /* session ended */ } } else { voiceMode = 'listening'; if (currentAction && actionDetector) { actionDetector.reset(); actionArmed = true; } setVoiceStatus('Voice on · listening'); setCharacter(activityCharacterState()); flushPromptRetry(); unmuteTimer = window.setTimeout(() => { try { conversation?.setMicMuted(false); } catch { /* session ended */ } }, UNMUTE_DELAY_MS); } },
       onError: (message) => { if (mySession === sessionId) { const failure = describeFailure(message); setVoiceStatus(failure); hint(failure); } },
-      onDisconnect: (details) => { if (mySession !== sessionId) return; sessionId++; conversation = null; connecting = false; awaitingGuidedPrompt = false; guidedIndex = -1; pendingAgentAction = null; voiceMode = 'idle'; syncVoiceControls(); if (details.reason !== 'user') { const failure = details.reason === 'error' ? describeFailure(details.message) : CLOSED_MSG; setVoiceStatus(failure); hint(failure); } else setVoiceStatus('Voice off · camera can stay on'); setActivityCharacter(activityCharacterState()); },
+      onDisconnect: (details) => { if (mySession !== sessionId) return; sessionId++; conversation = null; connecting = false; awaitingGuidedPrompt = false; guidedIndex = -1; pendingAgentAction = null; promptRetryPending = false; voiceMode = 'idle'; syncVoiceControls(); if (details.reason !== 'user') { const failure = details.reason === 'error' ? describeFailure(details.message) : CLOSED_MSG; setVoiceStatus(failure); hint(failure); } else setVoiceStatus('Voice off · camera can stay on'); setActivityCharacter(activityCharacterState()); },
     }) as Promise<VoiceConversation>;
     timeout = window.setTimeout(() => { if (mySession === sessionId && !conversation) { sessionId++; connecting = false; voiceMode = 'idle'; syncVoiceControls(); setVoiceStatus('Voice connection timed out.'); hint('Voice connection timed out.'); } }, CONNECT_TIMEOUT_MS);
     const connected = await starting;
     if (mySession !== sessionId || !trialActive || trialEnded) { await connected.endSession().catch(() => {}); return; }
     conversation = connected; connecting = false; syncVoiceControls();
     try { connected.setMicMuted(isLumiSpeaking()); } catch { /* session ended */ }
+    flushPromptRetry();
     if (awaitingGuidedPrompt && !currentAction) {
       try { connected.sendUserMessage('Let us play a movement game. First, please ask me aloud to lift both hands above my shoulders. Wait for me to try; do not move to the next action until I finish.'); }
       catch { setVoiceStatus('Voice connected, but the first movement prompt could not be sent.'); }
@@ -301,7 +319,7 @@ async function startConversation() {
   finally { window.clearTimeout(timeout); if (voiceRequest === request) voiceRequest = null; }
 }
 
-function endConversation() { sessionId++; window.clearTimeout(unmuteTimer); voiceRequest?.abort(); voiceRequest = null; const current = conversation; conversation = null; connecting = false; awaitingGuidedPrompt = false; guidedIndex = -1; pendingAgentAction = null; voiceMode = 'idle'; if (current) current.endSession().catch(() => {}); syncVoiceControls(); setVoiceStatus('Voice off · camera can stay on'); if (trialActive) setActivityCharacter(activityCharacterState()); }
+function endConversation() { sessionId++; window.clearTimeout(unmuteTimer); voiceRequest?.abort(); voiceRequest = null; const current = conversation; conversation = null; connecting = false; awaitingGuidedPrompt = false; guidedIndex = -1; pendingAgentAction = null; promptRetryPending = false; voiceMode = 'idle'; if (current) current.endSession().catch(() => {}); syncVoiceControls(); setVoiceStatus('Voice off · camera can stay on'); if (trialActive) setActivityCharacter(activityCharacterState()); }
 
 function sendTextMessage(text: string) { const message = text.trim(); if (!message) return; if (!conversation) { hint('Open LUMI and tap TALK before sending a text message.'); return; } try { conversation.sendUserMessage(message); hint(''); } catch { hint('Message not sent. Tap TALK to reconnect.'); } }
 
