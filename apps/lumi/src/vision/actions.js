@@ -8,6 +8,23 @@ export const ACTIONS = Object.freeze([
   { id: 'head-touch', label: 'Touch Your Head', instruction: 'Bring both hands close to the top of your head.' },
 ]);
 
+// A simpler first step for a spoken, guided interaction. The original five
+// selectable activities above stay intact.
+export const GUIDED_RAISE_HAND = Object.freeze({
+  id: 'raise-hand', label: 'Raise One Hand', instruction: 'Raise either hand above your shoulder and hold it there.',
+});
+
+export function actionFromAgentPrompt(text) {
+  const prompt = String(text || '').toLowerCase();
+  if (/\b(wave|waving)\b|挥手/u.test(prompt)) return ACTIONS[0];
+  if (/\b(both hands|two hands|hands up)\b|双手|两只手/u.test(prompt)) return ACTIONS[1];
+  if (/\b(snowflake|arms out|stretch both arms)\b|雪花|张开双臂/u.test(prompt)) return ACTIONS[2];
+  if (/\b(sway|lean left|lean right)\b|摇摆|左右摆/u.test(prompt)) return ACTIONS[3];
+  if (/\b(touch your head|hands on your head)\b|摸头|碰头/u.test(prompt)) return ACTIONS[4];
+  if (/\b(raise|lift|put up).{0,30}\b(hand|arm)\b|举.{0,6}手/u.test(prompt)) return GUIDED_RAISE_HAND;
+  return null;
+}
+
 const I = Object.freeze({
   nose: 0, leftEye: 2, rightEye: 5, leftShoulder: 11, rightShoulder: 12,
   leftElbow: 13, rightElbow: 14, leftWrist: 15, rightWrist: 16,
@@ -21,7 +38,8 @@ const DEFAULTS = Object.freeze({
   historyFrames: 48,
   smoothing: 0.4,
   motionThreshold: 0.07,
-  waveRange: 0.75,
+  waveMotionThreshold: 0.045,
+  waveRange: 0.5,
   swayRange: 0.32,
 });
 
@@ -64,7 +82,7 @@ function motion(state, position, options, requiredRange) {
   if (state.history.length > options.historyFrames) state.history.shift();
   state.range = Math.max(...state.history) - Math.min(...state.history);
   const detected = state.changes >= 2 && state.range >= requiredRange;
-  const progress = Math.min(1, (state.changes / 2 + state.range / requiredRange) / 2);
+  const progress = detected ? 1 : Math.min(0.95, state.changes / 2, state.range / requiredRange);
   if (detected) {
     state.cooldown = options.cooldownFrames;
     state.frames = 0;
@@ -80,7 +98,9 @@ function motion(state, position, options, requiredRange) {
 
 function confirmation(state, condition, options) {
   if (state.cooldown > 0) { state.cooldown -= 1; state.frames = 0; return false; }
-  state.frames = condition ? state.frames + 1 : 0;
+  // A single noisy frame should not erase a nearly completed held gesture.
+  // Sustained relaxation still drains the evidence before confirmation.
+  state.frames = condition ? state.frames + 1 : Math.max(0, state.frames - 2);
   if (state.cooldown === 0 && state.frames >= options.confirmFrames) {
     state.cooldown = options.cooldownFrames;
     state.frames = 0;
@@ -102,7 +122,8 @@ function wave(state, landmarks, options) {
   const side = raised.includes(state.hand) ? state.hand : raised[0];
   if (state.hand !== side) resetState(state);
   state.hand = side;
-  return motion(state, (wrists[side].x - shoulders[side].x) / scale, options, options.waveRange);
+  return motion(state, (wrists[side].x - shoulders[side].x) / scale,
+    { ...options, motionThreshold: options.waveMotionThreshold }, options.waveRange);
 }
 
 function handsUp(state, landmarks, options) {
@@ -114,6 +135,17 @@ function handsUp(state, landmarks, options) {
   const condition = lw.y < ls.y - scale * 0.2 && rw.y < rs.y - scale * 0.2;
   const detected = confirmation(state, condition, options);
   return { valid: true, progress: Math.min(1, state.frames / options.confirmFrames), detected };
+}
+
+function raiseHand(state, landmarks, options) {
+  const shoulders = [point(landmarks, I.leftShoulder), point(landmarks, I.rightShoulder)];
+  if (!shoulders.every((shoulder) => visible(shoulder, options.minVisibility))) return { valid: false, progress: 0 };
+  const scale = scaleFor(landmarks);
+  const wrists = [point(landmarks, I.leftWrist), point(landmarks, I.rightWrist)];
+  const condition = wrists.some((wrist, side) => visible(wrist, options.minVisibility)
+    && wrist.y < shoulders[side].y - scale * 0.3);
+  const detected = confirmation(state, condition, { ...options, confirmFrames: 4 });
+  return { valid: true, progress: Math.min(1, state.frames / 4), detected };
 }
 
 function snowflake(state, landmarks, options) {
@@ -154,7 +186,7 @@ function headTouch(state, landmarks, options) {
   return { valid: true, progress: Math.min(1, state.frames / options.confirmFrames), detected };
 }
 
-const detectors = { wave, 'hands-up': handsUp, snowflake, sway, 'head-touch': headTouch };
+const detectors = { wave, 'raise-hand': raiseHand, 'hands-up': handsUp, snowflake, sway, 'head-touch': headTouch };
 
 export function createActionDetector(actionId, overrides = {}) {
   if (!detectors[actionId]) throw new Error(`Unknown action: ${actionId}`);

@@ -59,6 +59,12 @@ public static class LumiPoseExport
             Export(model, animator, camera, target, output, "lumi-listen.png", "Idle", 2.4f);
             Export(model, animator, camera, target, output, "lumi-speak.png", "Demo-Speak", 1.0f);
             Export(model, animator, camera, target, output, "lumi-move.png", "WavingOneHand", 0.3f);
+            ExportSequence(model, animator, camera, target, output, "idle", "Idle", 32, 0.6f);
+            ExportSequence(model, animator, camera, target, output, "wave", "Wave", 32, 0f);
+            // Demo-Speak hides the body in later keyframes; keep the complete Idle
+            // rig and animate only the jaw bone for a stable speaking loop.
+            ExportSequence(model, animator, camera, target, output, "speak", "Idle", 28, 0.6f, 3.625f);
+            ExportSequence(model, animator, camera, target, output, "move", "WavingOneHand", 16, 0f);
         }
         finally
         {
@@ -70,8 +76,30 @@ public static class LumiPoseExport
         Debug.Log("LUMI_POSE_EXPORT_SUCCESS " + output);
     }
 
+    private static void ExportSequence(GameObject model, Animator animator, Camera camera, RenderTexture target,
+        string output, string name, string clipName, int count, float offset, float duration = 0f)
+    {
+        AnimationClip clip = AssetDatabase.LoadAssetAtPath<AnimationClip>(
+            "Assets/Animations/Clips/" + clipName + ".anim");
+        if (clip == null) throw new Exception("Missing Unity animation: " + clipName);
+        string directory = Path.Combine(output, "frames", name);
+        Directory.CreateDirectory(directory);
+        RenderTexture frameTarget = new RenderTexture(512, 512, 24, RenderTextureFormat.ARGB32);
+        camera.targetTexture = frameTarget;
+        try
+        {
+            for (int frame = 0; frame < count; frame++)
+            {
+                float time = (offset + (duration > 0f ? duration : clip.length) * frame / count) % clip.length;
+                Export(model, animator, camera, frameTarget, directory,
+                    frame.ToString("D2") + ".png", clipName, time, name == "speak" ? frame : -1);
+            }
+        }
+        finally { camera.targetTexture = target; UnityEngine.Object.DestroyImmediate(frameTarget); }
+    }
+
     private static void Export(GameObject model, Animator animator, Camera camera, RenderTexture target,
-        string output, string filename, string clipName, float time)
+        string output, string filename, string clipName, float time, int speakingFrame = -1)
     {
         AnimationClip clip = AssetDatabase.LoadAssetAtPath<AnimationClip>(
             "Assets/Animations/Clips/" + clipName + ".anim");
@@ -87,6 +115,8 @@ public static class LumiPoseExport
         if (filename == "lumi-wave.png") arm.rotation = Quaternion.AngleAxis(-90f, Vector3.forward) * armRotation;
         if (filename == "lumi-listen.png") head.rotation = Quaternion.AngleAxis(12f, Vector3.forward) * headRotation;
         if (filename == "lumi-speak.png" && jaw != null) jaw.localRotation = Quaternion.AngleAxis(12f, Vector3.right) * jawRotation;
+        if (speakingFrame >= 0 && jaw != null)
+            jaw.localRotation = Quaternion.AngleAxis(12f * Mathf.Abs(Mathf.Sin(speakingFrame * Mathf.PI / 2f)), Vector3.right) * jawRotation;
         if (filename == "lumi-move.png") model.transform.rotation = Quaternion.AngleAxis(-8f, Vector3.forward) * modelRotation;
         var bakedObjects = new List<GameObject>();
         var skinnedRenderers = model.GetComponentsInChildren<SkinnedMeshRenderer>();
@@ -116,8 +146,8 @@ public static class LumiPoseExport
         if (jaw != null) jaw.localRotation = jawRotation;
         model.transform.rotation = modelRotation;
         RenderTexture.active = target;
-        Texture2D image = new Texture2D(768, 768, TextureFormat.RGBA32, false);
-        image.ReadPixels(new Rect(0, 0, 768, 768), 0, 0);
+        Texture2D image = new Texture2D(target.width, target.height, TextureFormat.RGBA32, false);
+        image.ReadPixels(new Rect(0, 0, target.width, target.height), 0, 0);
         image.Apply();
         File.WriteAllBytes(Path.Combine(output, filename), image.EncodeToPNG());
         UnityEngine.Object.DestroyImmediate(image);
