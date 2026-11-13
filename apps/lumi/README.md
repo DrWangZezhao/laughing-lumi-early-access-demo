@@ -36,6 +36,22 @@ Then commit `apps/lumi/` and `demo/` together. Versions are pinned in `package-l
   camera availability is also supplied as session context. Microphone audio is sent
   to ElevenLabs for the conversation. No new runtime dependencies were added.
 
+## Camera play works without voice
+
+The camera always runs the existing temporal wave and sway detectors when no guided
+activity is active. It needs no voice connection, spoken instruction, or activity button.
+A confirmed movement shows a short local “Wave detected” / “Sway detected” label. A
+raised hand alone remains a visual cue, never a confirmed wave. Local free-play results
+never call the voice game's completion pathway or send anything to ElevenLabs. Missing
+pose/camera stop/trial end clear the local history and result. Step back far enough for
+shoulders, hands and hips to fit in frame; face-only input cannot verify these movements.
+
+The upper-right slogan, camera heading, privacy paragraph and duplicate character status
+bubble are removed. The preview has only its existing stop control. The original startup
+permission/privacy disclosure remains. Voice failure is shown briefly and does not block
+camera recognition. This is the minimum functional fallback while the team-owned agent
+is unavailable; it does not claim a working voice conversation.
+
 ## Conversation first, two matching movements
 
 The single existing Start Demo gesture starts camera and microphone together and unlocks

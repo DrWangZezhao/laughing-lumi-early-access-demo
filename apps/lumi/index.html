@@ -10,19 +10,19 @@
 <body>
 <div id="app">
   <div id="root">
-    <header id="topbar"><div class="brand"><img class="logo" src="./art/logo.png" alt="" /><img class="letters" src="./art/letters.png" alt="Laughing Lumi" /></div><span class="header-note">A little chat. A little adventure.</span></header>
+    <header id="topbar"><div class="brand"><img class="logo" src="./art/logo.png" alt="" /><img class="letters" src="./art/letters.png" alt="Laughing Lumi" /></div></header>
     <main id="frame">
       <div id="stage" style="background-image:url(./art/winter-scene.jpg)">
         <img id="character" class="character" src="./character/unity/lumi-idle.png" alt="Lumi the polar bear" />
-        <div id="characterStatus" class="character-status" aria-live="polite">Meet Lumi</div>
+        <span id="characterStatus" class="sr-only" aria-live="polite"></span>
         <div id="sessionBar" class="session-bar" hidden><span id="sessionLabel">PUBLIC DEMO</span><strong id="countdown">01:00</strong><button id="stopDemoButton" type="button">Stop</button></div>
-        <div id="cameraCard" class="camera-card" hidden><div class="camera-heading"><span class="camera-dot" aria-hidden="true"></span><strong>Camera on</strong><button id="stopCameraButton" type="button" aria-label="Stop camera">×</button></div><video id="cameraPreview" autoplay muted playsinline aria-label="Mirrored local camera preview"></video><p id="cameraStatus">Video stays on this device.</p></div>
+        <div id="cameraCard" class="camera-card" hidden><video id="cameraPreview" autoplay muted playsinline aria-label="Mirrored local camera preview"></video><button id="stopCameraButton" type="button" aria-label="Stop camera">×</button></div>
       </div>
-      <section id="welcomePanel" class="welcome-panel" aria-label="Meet Lumi"><p class="eyebrow">A FRIEND IN THE SNOW</p><h1 id="welcomeTitle">Meet Lumi · a 1-minute hello</h1><p>Say hello, tell Lumi about yourself, and see where your little adventure goes.</p><button id="startDemoButton" class="primary-action" type="button">Start Demo</button><p id="trialNote" class="small-note">Start asks for camera and microphone permission. Video stays on this device; microphone audio goes to the voice service. The public trial lasts 60 seconds.</p></section>
+      <section id="welcomePanel" class="welcome-panel" aria-label="Meet Lumi"><h1 id="welcomeTitle">Move with Lumi · a 1-minute demo</h1><p>Wave or sway with Lumi.</p><button id="startDemoButton" class="primary-action" type="button">Start Demo</button><p id="trialNote" class="small-note">Start asks for camera and microphone permission. Video stays on this device; microphone audio goes to the voice service. The public trial lasts 60 seconds.</p></section>
       <section id="conversationPanel" class="conversation-panel" aria-label="Conversation with Lumi" hidden>
         <p id="playVoiceStatus" role="status" aria-live="polite">Connecting to Lumi…</p>
         <p id="playTranscript" class="play-transcript" role="log" aria-live="polite" hidden></p>
-        <div class="movement-note"><strong id="activityName">Chat with Lumi</strong><span id="activityFeedback" role="status" aria-live="polite"></span></div>
+        <div class="movement-note"><strong id="activityName">Wave · Sway</strong><span id="activityFeedback" role="status" aria-live="polite"></span></div>
       </section>
     </main>
   </div>
