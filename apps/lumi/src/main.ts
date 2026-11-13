@@ -6,6 +6,7 @@ import { createGestureMirror, type MirrorCue } from './vision/gesture-mirror.js'
 import { createSessionClock } from './session.js';
 import { GUIDED_SEQUENCE as DEFAULT_GUIDED_SEQUENCE, completionEvent } from './guided-game.js';
 import { GAME_CONTEXT, createPlayGuide, readyInvitation, spokenAction, createSpeechGate } from './guided-dialogue.js';
+import { createLocalMovementDetector } from './vision/local-movements.js';
 import { voiceFailure } from './voice-recovery.js';
 
 const IS_INTERNAL = /\/team-demo\/?$/u.test(window.location.pathname);
@@ -18,7 +19,7 @@ const el = {
   welcomePanel: $('welcomePanel'), startDemoButton: $('startDemoButton'), stopDemoButton: $('stopDemoButton'),
   sessionBar: $('sessionBar'), sessionLabel: $('sessionLabel'), countdown: $('countdown'), character: $<HTMLImageElement>('character'),
   characterStatus: $('characterStatus'), cameraCard: $('cameraCard'), cameraPreview: $<HTMLVideoElement>('cameraPreview'), stopCameraButton: $('stopCameraButton'),
-  cameraStatus: $('cameraStatus'), activityFeedback: $('activityFeedback'), activityName: $('activityName'),
+  activityFeedback: $('activityFeedback'), activityName: $('activityName'),
   conversationPanel: $('conversationPanel'), playVoiceStatus: $('playVoiceStatus'), playTranscript: $('playTranscript'),
   completionDialog: $('completionDialog'), closeCompletionButton: $('closeCompletionButton'), restartDemoButton: $('restartDemoButton'),
 };
@@ -49,6 +50,9 @@ const frameImages = new Map<string, HTMLImageElement>();
 const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
 let motionReduced = motionPreference.matches;
 const gestureMirror = createGestureMirror();
+const localMovement = createLocalMovementDetector();
+let localDetected: 'wave' | 'sway' | null = null;
+let localDetectedUntil = 0;
 let mirrorGesture: MirrorCue['gesture'] = 'idle';
 const frameSets: Record<CharacterState, { name: string; count: number; period: number }> = {
   idle: { name: 'idle', count: 32, period: 260 }, greeting: { name: 'wave', count: 32, period: 99 },
@@ -74,7 +78,23 @@ const camera = new CameraController(el.cameraPreview, (landmarks) => {
   applyMirrorTransform(!hipsVisible ? { ...mirror, lateral: 0, tilt: 0 }
     : demonstrateSway ? { ...mirror, lateral: demoLean, tilt: demoLean * 10 } : mirror);
   setActivityCharacter(activityCharacterState());
-  if (!currentAction || !actionDetector) { el.activityFeedback.textContent = ''; return; }
+  if (!currentAction || !actionDetector) {
+    // Free play remains usable while voice connects, fails, or is not playing a
+    // guided round. This feedback NEVER acknowledges a voice-game completion.
+    const detected = localMovement.update(landmarks);
+    if (!mirror.poseVisible) { localDetected = null; localDetectedUntil = 0; }
+    if (detected) { localDetected = detected; localDetectedUntil = performance.now() + 2200; }
+    if (localDetected && performance.now() < localDetectedUntil) {
+      el.activityName.textContent = localDetected === 'wave' ? 'Wave detected ✓' : 'Sway detected ✓';
+      el.activityFeedback.textContent = '';
+    } else {
+      localDetected = null; el.activityName.textContent = 'Wave · Sway';
+      el.activityFeedback.textContent = mirror.poseVisible ? '' : 'Step back so your shoulders, hands and hips fit in view.';
+    }
+    setActivityCharacter(activityCharacterState());
+    return;
+  }
+  localMovement.reset(); localDetected = null; localDetectedUntil = 0;
   if (!actionArmed) { el.activityFeedback.textContent = 'Listen to Lumi first'; return; }
   const result = actionDetector.update(landmarks);
   el.activityFeedback.textContent = !mirror.poseVisible ? 'Move back so your shoulders and hands fit in the camera.'
@@ -142,25 +162,28 @@ function resetGestureMirror() {
 
 function activityCharacterState(): CharacterState {
   if (camera.active && trialActive && !trialEnded) {
+    if (localDetected === 'wave' && performance.now() < localDetectedUntil) return 'greeting';
     if (mirrorGesture === 'one-hand-raised') return 'greeting';
   }
   return currentAction?.id === 'wave' ? 'greeting' : currentAction ? 'idle' : voiceMode === 'listening' ? 'listening' : 'idle';
 }
 
-function setVoiceStatus(message: string) { el.playVoiceStatus.textContent = message; }
+function setVoiceStatus(message: string) { el.playVoiceStatus.textContent = message; el.playVoiceStatus.title = ''; }
 function setTranscript(text: string) { el.playTranscript.textContent = text; show(el.playTranscript, Boolean(text)); }
 function updateGameContext(message: string) {
   try { conversation?.sendContextualUpdate(message); }
   catch { setVoiceStatus('Voice could not receive the game context. Stop and start the demo to reconnect.'); }
 }
 function updateCameraStatus(status: CameraStatus) {
+  localMovement.reset(); localDetected = null; localDetectedUntil = 0;
   if (status !== 'ready') resetGestureMirror();
   show(el.cameraCard, status === 'ready');
-  if (status === 'ready') { cameraProblem = ''; el.cameraStatus.textContent = 'Video stays on this device.'; }
+  if (status === 'ready') { cameraProblem = ''; if (!currentAction) el.activityName.textContent = 'Wave · Sway'; }
   else if (status === 'starting') cameraProblem = 'Starting camera…';
   else if (status === 'denied') cameraProblem = 'Camera permission is off. You can still talk to Lumi.';
   else if (status === 'unavailable' || status === 'model-unavailable') cameraProblem = 'Camera checking is unavailable. You can still talk to Lumi.';
   else cameraProblem = trialActive ? 'Camera is off. You can still talk to Lumi.' : '';
+  if (status !== 'ready' && !currentAction) el.activityName.textContent = status === 'starting' ? 'Starting camera…' : 'Camera off';
   el.activityFeedback.textContent = cameraProblem;
   // Availability is device state, never a pose observation or success event.
   if (conversation && status !== 'starting') updateGameContext(status === 'ready'
@@ -170,7 +193,7 @@ function updateCameraStatus(status: CameraStatus) {
 function resetActivity() {
   currentAction = null; actionDetector = null; actionArmed = false; actionInstructionPlayed = false; window.clearTimeout(actionTimer);
   awaitingGuidedPrompt = Boolean(conversation && guidedIndex >= 0 && guidedIndex < GUIDED_SEQUENCE.length);
-  el.activityName.textContent = 'Chat with Lumi';
+  el.activityName.textContent = camera.active ? 'Wave · Sway' : 'Camera off';
   el.activityFeedback.textContent = cameraProblem; el.characterStatus.textContent = 'Lumi is here to chat';
   setActivityCharacter(activityCharacterState());
 }
@@ -296,9 +319,10 @@ function recoverVoice(error: unknown) {
   window.clearTimeout(retryTimer); retryTimer = undefined;
   if (failure.retryable && trialActive && !trialEnded && !document.hidden && reconnectAttempts < 2) {
     const delay = ++reconnectAttempts * 2000;
-    setVoiceStatus(`${failure.message} Reconnecting (${reconnectAttempts}/2)…`);
+    setVoiceStatus('Voice reconnecting…');
     retryTimer = window.setTimeout(() => { retryTimer = undefined; void startConversation(); }, delay);
-  } else setVoiceStatus(failure.retryable ? `${failure.message} Stop and start the demo to try again.` : failure.message);
+  } else setVoiceStatus('Voice unavailable');
+  el.playVoiceStatus.title = failure.message;
 }
 async function startConversation() {
   if (!trialActive || trialEnded || conversation || connecting) return;
@@ -386,7 +410,7 @@ motionPreference.addEventListener('change', (event) => {
 });
 setCharacter('idle');
 if (IS_INTERNAL) {
-  $('welcomeTitle').textContent = 'Meet Lumi · Team Demo';
+  $('welcomeTitle').textContent = 'Move with Lumi · Team Demo';
   $('trialNote').textContent = 'Start asks for camera and microphone permission. Video stays here; microphone audio goes to the voice service. Team Demo has no time limit.';
 }
 (window as unknown as { lumi: object }).lumi = {
