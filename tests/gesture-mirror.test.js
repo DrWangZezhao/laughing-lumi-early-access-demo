@@ -25,7 +25,7 @@ test('absent, face-only, uncertain, and invalid shoulders yield a neutral cue', 
   }
 });
 
-test('either reliably raised hand cues a wave; two cue the moving approximation', () => {
+test('either raised hand has a cue; two raised hands are classified separately', () => {
   assert.equal(interpretGesture(oneHand()).gesture, 'one-hand-raised');
   assert.equal(interpretGesture(pose({ 16: { y: .15 } })).gesture, 'one-hand-raised');
   assert.equal(interpretGesture(bothHands()).gesture, 'both-hands-raised');

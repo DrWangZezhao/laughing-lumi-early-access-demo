@@ -30,70 +30,80 @@ Then commit `apps/lumi/` and `demo/` together. Versions are pinned in `package-l
   Camera and voice start together from the existing Start Demo button. Camera processing
   continues while voice connects or if voice fails. The public agent owner controls voice
   availability, usage and domain settings.
-- Movement recognition uses the pinned `@mediapipe/tasks-vision` Pose Landmarker Lite model,
-  with locally bundled WASM and model files. Camera frames and landmarks remain in the browser.
-  In a guided voice session, a camera-verified action sends only a completion event to the
-  public voice agent, which can praise the player and speak the next instruction. Manual
-  unverified completion never sends that event. The default first rounds are hands-up and
-  wave; if Lumi speaks another supported instruction, its matching detector is selected.
-- Camera mirroring is **gesture-triggered animation with body tilt**, not full motion capture,
-  3D skeletal tracking, or real-time skeletal retargeting. With the camera on, even before
-  choosing an activity, one raised hand triggers the existing Unity wave frames and two
-  raised hands trigger the existing move frames as an approximation. Torso lean relative
-  to the hips adds at most ±10° tilt and six design pixels of horizontal movement,
-  mirrored to match the camera preview. These cues do not verify activity completion.
-- Visual gesture changes require three consecutive frames and lean is smoothed. Missing
-  or uncertain shoulders reset the mirror; hips are required for tilt, and wrist visibility
-  is checked for raised-hand cues. Stopping the camera or trial clears the transform.
-  Reduced-motion preferences use static character images without body tilt or translation.
-  Hands Up asks the player to move back when both wrists are not reliably in frame.
-  The existing action detector remains authoritative. The mirroring cues are separate
-  from activity verification and never advance the voice game themselves.
-- Mirroring runs entirely on device with no new runtime dependencies. It sends no camera
-  frames, landmarks, confidence scores, or visual cue data to a server. Run `npm test`
-  at the repository root for deterministic interpreter, smoothing, and detector checks.
-- Voice needs https or localhost (microphone rule); the UI also works from a local file.
+- Movement recognition uses the pinned local MediaPipe Pose Landmarker Lite model and
+  bundled WASM. Frames, landmarks, visibility/confidence values and mirror cues stay
+  on the device. Only a detector-confirmed completion event is sent to voice; device
+  camera availability is also supplied as session context. Microphone audio is sent
+  to ElevenLabs for the conversation. No new runtime dependencies were added.
 
-## One start and a connected voice/movement game
+## Conversation first, two matching movements
 
-Start Demo now requests camera and microphone access and starts both connections. There
-are no separate Enable Camera or TALK start buttons, and no new buttons were added. The
-existing camera/voice/session stop controls remain available. Both public and Team Demo
-wait for this one user gesture so browsers can unlock audio; the public clock still lasts
-60 seconds and Team Demo still has no time limit. Permission denial leaves manual,
-explicitly unverified play available. To retry a stopped or failed connection, stop and
-restart the demo after adjusting browser permissions.
+The single existing Start Demo gesture starts camera and microphone together and unlocks
+browser audio. There are no separate camera/TALK launch buttons, activity buttons,
+manual-completion controls, view tabs or placeholder score/settings buttons. The large
+colored activity panel is gone. A small caption area shows Lumi's latest reply, voice
+connection state and the current movement. Session stop and camera stop remain available
+for privacy. Public sessions still last 60 seconds; Team Demo still has no time limit.
+The survey and existing completion flow remain intact. Camera denial leaves conversation
+available; microphone denial is explained without claiming a working voice connection.
 
-The browser now handles user transcripts such as “I want to play game”, “play again”,
-and “stop the game”, plus Chinese equivalents. An existing activity button also requests
-a spoken instruction when voice is connected. A small local coordinator follows this flow:
+Session-only context follows the original stored Lumi prompt's warm, curious, child-led
+North Pole character and short replies. It does not edit the persistent ElevenLabs agent,
+voice/model, prompts in Drive or any server quota/authentication settings. Its flow is:
 
-1. Prepare a game or requested activity and ask Lumi for one short supported instruction.
-2. Match the actual instruction to an existing detector, including one-hand raising.
-   Praise, negated instructions, and unsupported movements do not start detectors.
-3. Match the instruction's event ID to the SDK audio playback event and wait for its
-   speaking-to-listening transition before checking the movement. Transcripts may arrive
-   before or after audio; duplicate messages/listening events do not restart progress.
-4. Only `createActionDetector` confirmation calls the existing verified-completion path.
-   It sends one existing completion event to voice, which requests praise and the next step.
-   A spoken “I did it” or manual completion never sends a verified-completion event.
+1. Greet and chat. Connection itself sends no synthetic user request for a movement.
+2. When a child says “I want to play game” (or a supported Chinese equivalent), invite
+   them into a small adventure, ask if they are ready, then wait.
+3. An affirmative answer counts only after the invitation's matching audio has finished.
+   Negation, a request to chat, stopping, interruption, or an unplayed invitation cannot
+   authorize checking.
+4. Recognize only a spoken **wave** or **sway** instruction. The other legacy detectors
+   remain unchanged but are not offered by this demo's conversational bridge.
+5. Wait for that instruction's own audio playback to finish. Demonstrate wave with the
+   existing Unity wave PNG frames and sway with a small body tilt. While speaking, the
+   existing speaking frames take priority. Visible player lean takes over the sway;
+   absent pose/reduced motion clears tilt. The same existing authoritative detector
+   checks the player's attempt locally.
+6. A verified completion sends one completion event for praise. Lumi asks before the
+   next movement, then returns to conversation after the two rounds. Saying “I did it”
+   never verifies an action. The legacy unverified branch still sends no completion event;
+   its UI control was removed at the user's request.
 
-Fixed game context is sent with `sendContextualUpdate`, and prompt recovery uses at most
-two explicit requests per pending instruction. This prevents an endless prompt loop when
-the agent only says “let's play” or does not give a usable movement. The microphone stays
-open during replies so the child can interrupt; the pinned SDK already requests echo
-cancellation and noise suppression. Interrupted instruction playback does not arm checking.
-The 20-second connection deadline now also covers signed-URL fetching, and late sessions
-are disposed. Stopping/restarting ignores callbacks from the old session.
+Camera mirroring is **gesture-triggered animation with body tilt**, not full motion
+capture, 3D skeletal tracking or real-time skeletal retargeting. Even while chatting, a
+reliably raised single hand can cue the existing wave frames, and torso lean relative to
+hips produces at most ±10° rotation and six design pixels of translation. Two raised
+hands are no longer represented as a hands-up animation using unrelated moving frames.
+Visual changes require three consecutive frames and lean is smoothed. Pose loss, camera
+stop and trial end reset transforms. Reduced motion uses static images with no tilt.
+Mirroring never completes an activity. Framing hints explain when hands/torso are missing.
 
-No persistent ElevenLabs agent settings, voice model, or server security/quota settings
-were changed. `showMovement` remains an optional client tool; it still requires matching
-configuration in ElevenLabs if used. Explicit spoken instructions also work without it.
-The coordinator sends only fixed game/instruction context and the existing verified
-completion event; video, pose landmarks, visibility/confidence, and mirror cues stay local.
-The remote agent's response quality, speech recognition, latency, and availability still
-require live testing. Runtime context is guidance to the agent, not a guarantee about its
-spoken responses.
+The connection deadline covers signed-URL fetching and SDK startup, and late sessions
+are disposed. Recoverable provider rejection/disconnection retries at most twice per
+trial (2 and 4 seconds); permission, known quota and authentication errors do not retry.
+A startup timeout does not auto-open another session while an uncancellable SDK setup may
+still be pending. Persistent failures clear stale game state and show an honest error.
+The microphone stays open during replies for the pinned SDK's interruption handling,
+echo cancellation and noise suppression. Hiding the page stops media; returning restores
+an active session's media after reconciling public expiry.
 
-SDK behavior references: [callbacks and contextual updates](https://elevenlabs.io/docs/eleven-agents/libraries/java-script),
+## Validation and service limitation
+
+Run `npm ci --prefix apps/lumi`, `npm test` and `npm run build` at the repository root.
+The unit suite covers interpreter confidence/smoothing, the original detectors, invitation
+and audio gates, child consent/negation, unsupported movements and connection error policy.
+Browser QA must distinguish synthetic camera/voice fixtures from live-provider tests.
+Phone viewport checks are emulation; physical phone/child speech recognition still needs
+hands-on validation.
+
+On 13 November 2026, a live test using synthetic microphone/camera devices received
+“The AI agent you are trying to reach is not available” on all three attempts, before
+any agent response. Therefore this change does **not** establish that the upstream voice
+service or its spoken guiding quality has been restored. The current public agent owner
+must inspect its availability/configuration and service-side logs; the error alone does
+not establish a quota or domain cause. No private API key is available in this repository,
+and none is embedded in the browser. Runtime context guides the agent but cannot guarantee
+its responses or restore an unavailable service.
+
+SDK references: [callbacks and contextual updates](https://elevenlabs.io/docs/eleven-agents/libraries/java-script),
 [optional client-tool configuration](https://elevenlabs.io/docs/eleven-agents/customization/tools/client-tools).
