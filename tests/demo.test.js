@@ -135,11 +135,13 @@ test('agent movement wording selects the correct local detector without sharing 
   assert.equal(actionFromAgentPrompt('Can we talk about snow?'), null);
 });
 
-test('guided game starts with both hands and sends only a completion event to voice', () => {
-  assert.deepEqual(GUIDED_SEQUENCE.map((action) => action.id), ['hands-up', 'wave', 'snowflake', 'sway', 'head-touch']);
+test('guided game offers wave and sway and asks before another movement', () => {
+  assert.deepEqual(GUIDED_SEQUENCE.map((action) => action.id), ['wave', 'sway']);
   const event = completionEvent(GUIDED_SEQUENCE[1]);
   assert.match(event, /current movement is complete/i);
-  assert.match(event, /wave side to side/i);
+  assert.match(event, /sway/i);
+  assert.match(event, /WAIT for my answer/);
+  assert.match(event, /Do not start another movement yet/);
   assert.doesNotMatch(event, /image|video|landmark|confidence|keypoint/i);
   assert.match(completionEvent(), /game is finished/i);
 });

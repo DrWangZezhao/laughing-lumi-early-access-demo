@@ -1,64 +1,47 @@
 import './style.css';
 import { Conversation, type VoiceConversation } from '@elevenlabs/client';
-import { ACTIONS, GUIDED_RAISE_HAND, createActionDetector } from './vision/actions.js';
+import { createActionDetector } from './vision/actions.js';
 import { CameraController, type CameraStatus } from './vision/camera.js';
 import { createGestureMirror, type MirrorCue } from './vision/gesture-mirror.js';
 import { createSessionClock } from './session.js';
 import { GUIDED_SEQUENCE as DEFAULT_GUIDED_SEQUENCE, completionEvent } from './guided-game.js';
-import { GAME_CONTEXT, gameIntent, spokenAction, movementRequest, createSpeechGate } from './guided-dialogue.js';
+import { GAME_CONTEXT, createPlayGuide, readyInvitation, spokenAction, createSpeechGate } from './guided-dialogue.js';
+import { voiceFailure } from './voice-recovery.js';
 
 const IS_INTERNAL = /\/team-demo\/?$/u.test(window.location.pathname);
-const SURVEY_URL = 'https://script.google.com/macros/s/AKfycbzhraBB4vfYdVVjBPNGkVEjB6rZ4o1G1FVc2nlwrHprgm5ZehF2f0isWVlquAwJrT9LlA/exec?src=homepage';
 const DEMO_CONFIG = (window as unknown as { LUMI_DEMO_CONFIG?: { publicAgentId?: string; voiceEndpoint?: string } }).LUMI_DEMO_CONFIG ?? {};
 const PUBLIC_AGENT_ID = DEMO_CONFIG.publicAgentId?.trim() || '';
 const VOICE_ENDPOINT = DEMO_CONFIG.voiceEndpoint?.trim() || '';
 const CONNECT_TIMEOUT_MS = 20000;
-const QUOTA_MSG = 'Voice unavailable right now. Please try again later.';
-const CLOSED_MSG = 'Voice connection closed. Stop and restart the demo to reconnect.';
-
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const el = {
-  playButton: $('playButton'), lumiButton: $('lumiButton'), activityWindow: $('activityWindow'), companionWindow: $('companionWindow'),
-  welcomePanel: $('welcomePanel'), activityButtons: $('activityButtons'), startDemoButton: $('startDemoButton'), stopDemoButton: $('stopDemoButton'),
-  sessionBar: $('sessionBar'), sessionLabel: $('sessionLabel'), countdown: $('countdown'), character: $('character') as HTMLImageElement,
-  characterStatus: $('characterStatus'), cameraCard: $('cameraCard'), cameraPreview: $('cameraPreview') as HTMLVideoElement, stopCameraButton: $('stopCameraButton'), cameraStatus: $('cameraStatus'), activityFeedback: $('activityFeedback'),
-  activityName: $('activityName'), activityInstructionText: $('activityInstructionText'), activityProgress: $('activityProgress'), manualSuccessButton: $('manualSuccessButton') as HTMLButtonElement,
-  playStopButton: $('playStopButton'), playVoiceStatus: $('playVoiceStatus'), voiceActivityLabel: $('voiceActivityLabel'), playTranscript: $('playTranscript'),
-  debugBG: $('debugBG'), debugTranscript: $('debugTranscript'), debugInput: $('debugInput') as HTMLFormElement, debugText: $('debugText') as HTMLInputElement, debugHint: $('debugHint'), bottomButtons: $('bottomInteractionButtons'), bottomMic: $('bottomInteractionMicrophone'),
-  typeButton: $('typeButton'), stopButton: $('stopButton'), completionDialog: $('completionDialog'), closeCompletionButton: $('closeCompletionButton'), restartDemoButton: $('restartDemoButton'),
+  welcomePanel: $('welcomePanel'), startDemoButton: $('startDemoButton'), stopDemoButton: $('stopDemoButton'),
+  sessionBar: $('sessionBar'), sessionLabel: $('sessionLabel'), countdown: $('countdown'), character: $<HTMLImageElement>('character'),
+  characterStatus: $('characterStatus'), cameraCard: $('cameraCard'), cameraPreview: $<HTMLVideoElement>('cameraPreview'), stopCameraButton: $('stopCameraButton'),
+  cameraStatus: $('cameraStatus'), activityFeedback: $('activityFeedback'), activityName: $('activityName'),
+  conversationPanel: $('conversationPanel'), playVoiceStatus: $('playVoiceStatus'), playTranscript: $('playTranscript'),
+  completionDialog: $('completionDialog'), closeCompletionButton: $('closeCompletionButton'), restartDemoButton: $('restartDemoButton'),
 };
 const show = (node: HTMLElement, visible: boolean) => { node.classList.toggle('hidden', !visible); node.hidden = !visible; };
-
-type ViewMode = 'Play' | 'Lumi';
-let viewMode: ViewMode = 'Play';
-let trialActive = false;
-let trialEnded = false;
 type Activity = { id: string; label: string; instruction: string };
-// Match the local detector to the supported instruction actually spoken. The
-// completion pathway still advances this plan only after detector confirmation.
+let trialActive = false, trialEnded = false;
 const GUIDED_SEQUENCE: Activity[] = [...DEFAULT_GUIDED_SEQUENCE];
 let currentAction: Activity | null = null;
 let actionTimer: number | undefined;
 let actionDetector: ReturnType<typeof createActionDetector> | null = null;
-let actionArmed = false;
-let actionInstructionPlayed = false;
-let awaitingGuidedPrompt = false;
+let actionArmed = false, actionInstructionPlayed = false, awaitingGuidedPrompt = false;
 let guidedIndex = -1;
-let pendingAgentAction: Activity | null = null;
-let instructionTimer: number | undefined;
-let responseTimer: number | undefined;
-let promptKey = '';
-let promptAttempts = 0;
-let guidedFeedback = '';
-const speechGate = createSpeechGate();
+const guide = createPlayGuide();
+const speechGate = createSpeechGate(), invitationGate = createSpeechGate();
 const seenMessages = new Set<string>();
 let conversation: VoiceConversation | null = null;
 let connecting = false;
 let voiceMode: 'idle' | 'listening' | 'speaking' = 'idle';
 let voiceRequest: AbortController | null = null;
-let sessionId = 0;
-let quotaExhausted = false;
-let hintTimer: number | undefined;
+let sessionId = 0, reconnectAttempts = 0;
+let retryTimer: number | undefined;
+let cameraProblem = '';
+let resumeCamera = false, resumeVoice = false;
 type CharacterState = 'idle' | 'greeting' | 'listening' | 'speaking' | 'moving' | 'learning' | 'celebrating';
 let characterState: CharacterState | null = null;
 let frameTimer: number | undefined;
@@ -68,12 +51,9 @@ let motionReduced = motionPreference.matches;
 const gestureMirror = createGestureMirror();
 let mirrorGesture: MirrorCue['gesture'] = 'idle';
 const frameSets: Record<CharacterState, { name: string; count: number; period: number }> = {
-  idle: { name: 'idle', count: 32, period: 260 },
-  greeting: { name: 'wave', count: 32, period: 99 },
-  listening: { name: 'idle', count: 32, period: 260 },
-  speaking: { name: 'speak', count: 28, period: 129 },
-  moving: { name: 'move', count: 16, period: 40 },
-  learning: { name: 'idle', count: 32, period: 260 },
+  idle: { name: 'idle', count: 32, period: 260 }, greeting: { name: 'wave', count: 32, period: 99 },
+  listening: { name: 'idle', count: 32, period: 260 }, speaking: { name: 'speak', count: 28, period: 129 },
+  moving: { name: 'move', count: 16, period: 40 }, learning: { name: 'idle', count: 32, period: 260 },
   celebrating: { name: 'wave', count: 32, period: 99 },
 };
 
@@ -81,26 +61,32 @@ const camera = new CameraController(el.cameraPreview, (landmarks) => {
   if (!trialActive || trialEnded) return;
   const mirror = gestureMirror.update(landmarks);
   mirrorGesture = mirror.gesture;
-  applyMirrorTransform(mirror);
+  const hipsVisible = [23, 24].every((index) => {
+    const point = landmarks[index];
+    return point && Number.isFinite(point.x) && Number.isFinite(point.y) && point.x >= 0 && point.x <= 1
+      && point.y >= 0 && point.y <= 1 && (point.visibility ?? 0) >= .55;
+  });
+  // Demonstrate the same small sway after the spoken cue. Visible player lean
+  // takes over immediately; pose loss and reduced motion always clear it.
+  const demonstrateSway = currentAction?.id === 'sway' && actionInstructionPlayed && mirror.poseVisible && hipsVisible
+    && mirror.gesture !== 'sway' && voiceMode !== 'speaking';
+  const demoLean = Math.sin(performance.now() / 650) * .5;
+  applyMirrorTransform(!hipsVisible ? { ...mirror, lateral: 0, tilt: 0 }
+    : demonstrateSway ? { ...mirror, lateral: demoLean, tilt: demoLean * 10 } : mirror);
   setActivityCharacter(activityCharacterState());
-  if (!actionDetector || !currentAction) {
-    el.activityFeedback.textContent = awaitingGuidedPrompt ? guidedFeedback || 'Listen to Lumi · getting the movement ready' : landmarks.length ? 'Camera on · choose a movement' : 'No person in frame · move into view';
-    return;
-  }
-  const framingHint = currentAction.id === 'hands-up' && !mirror.wristsVisible
-    ? 'Move back so both hands fit in the camera.' : null;
-  if (!actionArmed) { el.activityFeedback.textContent = framingHint || 'Listen to Lumi first · camera is waiting'; return; }
+  if (!currentAction || !actionDetector) { el.activityFeedback.textContent = ''; return; }
+  if (!actionArmed) { el.activityFeedback.textContent = 'Listen to Lumi first'; return; }
   const result = actionDetector.update(landmarks);
-  if (result.status === 'camera-unavailable') return;
-  el.activityProgress.style.width = `${Math.round(result.progress * 100)}%`;
-  el.activityFeedback.textContent = framingHint || (landmarks.length ? 'Camera on · checking locally' : 'No person in frame · move into view');
-  if (result.detected) { speechGate.userTurn(); acknowledgeAction(true); watchForMovement(); }
-}, (status, message) => updateCameraStatus(status, message));
-
-const clock = createSessionClock({
-  onTick: (remaining) => { el.countdown.textContent = formatTime(remaining); },
-  onExpire: () => endTrial(true),
-});
+  el.activityFeedback.textContent = !mirror.poseVisible ? 'Move back so your shoulders and hands fit in the camera.'
+    : currentAction.id === 'wave' && !mirror.wristsVisible ? 'Move back so your hands fit in the camera.'
+    : currentAction.id === 'sway' && !hipsVisible
+      ? 'Move back so your shoulders and hips fit in the camera.' : 'Try it with Lumi · checking on this device';
+  if (result.detected) {
+    guide.completed(Boolean(GUIDED_SEQUENCE[guidedIndex + 1])); invitationGate.reset(); speechGate.userTurn();
+    acknowledgeAction(true);
+  }
+}, updateCameraStatus);
+const clock = createSessionClock({ onTick: (remaining) => { el.countdown.textContent = formatTime(remaining); }, onExpire: () => endTrial(true) });
 
 function formatTime(milliseconds: number): string {
   const seconds = Math.max(0, Math.ceil(milliseconds / 1000));
@@ -157,79 +143,54 @@ function resetGestureMirror() {
 function activityCharacterState(): CharacterState {
   if (camera.active && trialActive && !trialEnded) {
     if (mirrorGesture === 'one-hand-raised') return 'greeting';
-    if (mirrorGesture === 'both-hands-raised') return 'moving';
   }
-  return currentAction?.id === 'wave' ? 'greeting' : currentAction ? 'moving' : voiceMode === 'listening' ? 'listening' : 'idle';
+  return currentAction?.id === 'wave' ? 'greeting' : currentAction ? 'idle' : voiceMode === 'listening' ? 'listening' : 'idle';
 }
 
-function setVoiceStatus(message: string) { el.playVoiceStatus.textContent = message; el.voiceActivityLabel.textContent = voiceMode === 'speaking' ? 'Lumi is speaking' : connecting ? 'Connecting to Lumi…' : 'Lumi is listening'; }
-function isLumiSpeaking() { return voiceMode === 'speaking'; }
-function syncVoiceControls() {
-  const active = connecting || Boolean(conversation);
-  show(el.playStopButton, active);
-  show(el.bottomButtons, !active);
-  show(el.bottomMic, active);
+function setVoiceStatus(message: string) { el.playVoiceStatus.textContent = message; }
+function setTranscript(text: string) { el.playTranscript.textContent = text; show(el.playTranscript, Boolean(text)); }
+function updateGameContext(message: string) {
+  try { conversation?.sendContextualUpdate(message); }
+  catch { setVoiceStatus('Voice could not receive the game context. Stop and start the demo to reconnect.'); }
 }
-
-function setToggle(mode: ViewMode) {
-  const play = mode === 'Play';
-  el.playButton.classList.toggle('on', play); el.lumiButton.classList.toggle('on', !play);
-  el.playButton.setAttribute('aria-selected', String(play)); el.lumiButton.setAttribute('aria-selected', String(!play));
-}
-
-function openPlayView() {
-  viewMode = 'Play'; setToggle('Play'); show(el.activityWindow, true); show(el.companionWindow, false); setCharacter(voiceMode === 'speaking' ? 'speaking' : activityCharacterState());
-}
-
-function openLumiView() {
-  viewMode = 'Lumi'; setToggle('Lumi'); show(el.activityWindow, false); show(el.companionWindow, true); setCharacter(voiceMode === 'speaking' ? 'speaking' : activityCharacterState());
-}
-
-function setTranscript(text: string) { el.debugTranscript.textContent = text; show(el.debugBG, Boolean(text)); el.playTranscript.textContent = text; show(el.playTranscript, Boolean(text)); }
-function hint(text: string) { el.debugHint.textContent = text; show(el.debugHint, Boolean(text)); window.clearTimeout(hintTimer); if (text) hintTimer = window.setTimeout(() => show(el.debugHint, false), 5000); }
-
-function updateCameraStatus(status: CameraStatus, message?: string) {
+function updateCameraStatus(status: CameraStatus) {
   if (status !== 'ready') resetGestureMirror();
-  if (status === 'ready') { show(el.cameraCard, true); el.cameraStatus.textContent = 'Video stays here. Only verified movement completion is sent to Lumi.'; el.activityFeedback.textContent = currentAction ? (actionArmed ? 'Camera on · checking locally' : 'Listen to Lumi first · camera is waiting') : 'Camera on · listening to Lumi'; setActivityCharacter(activityCharacterState()); return; }
-  if (status === 'starting') { el.activityFeedback.textContent = 'Starting camera…'; return; }
-  show(el.cameraCard, false);
-  if (status === 'denied' || status === 'unavailable' || status === 'model-unavailable') { el.activityFeedback.textContent = 'Camera unavailable · manual mode'; hint(message || 'Camera unavailable. Movement is unverified.'); }
-  else if (status === 'stopped') el.activityFeedback.textContent = currentAction ? 'Camera off · manual mode' : 'Camera off · choose a movement';
+  show(el.cameraCard, status === 'ready');
+  if (status === 'ready') { cameraProblem = ''; el.cameraStatus.textContent = 'Video stays on this device.'; }
+  else if (status === 'starting') cameraProblem = 'Starting camera…';
+  else if (status === 'denied') cameraProblem = 'Camera permission is off. You can still talk to Lumi.';
+  else if (status === 'unavailable' || status === 'model-unavailable') cameraProblem = 'Camera checking is unavailable. You can still talk to Lumi.';
+  else cameraProblem = trialActive ? 'Camera is off. You can still talk to Lumi.' : '';
+  el.activityFeedback.textContent = cameraProblem;
+  // Availability is device state, never a pose observation or success event.
+  if (conversation && status !== 'starting') updateGameContext(status === 'ready'
+    ? 'Local movement checking is available. Continue our conversation; do not start a game without asking.'
+    : 'Local movement checking is unavailable. Keep chatting; do not claim a movement was verified.');
 }
-
 function resetActivity() {
   currentAction = null; actionDetector = null; actionArmed = false; actionInstructionPlayed = false; window.clearTimeout(actionTimer);
   awaitingGuidedPrompt = Boolean(conversation && guidedIndex >= 0 && guidedIndex < GUIDED_SEQUENCE.length);
-  document.querySelectorAll<HTMLButtonElement>('.act').forEach((button) => button.classList.remove('selected'));
-  el.activityName.textContent = 'Ready when you are';
-  el.activityInstructionText.textContent = 'Say “I want to play a game”, or choose a movement.';
-  el.activityProgress.style.width = '0%'; el.manualSuccessButton.disabled = true;
-  el.activityFeedback.textContent = camera.active ? 'Camera on · choose a movement' : 'Camera off · choose a movement';
-  el.characterStatus.textContent = 'Lumi is ready to play';
-  setActivityCharacter('idle');
+  el.activityName.textContent = 'Chat with Lumi';
+  el.activityFeedback.textContent = cameraProblem; el.characterStatus.textContent = 'Lumi is here to chat';
+  setActivityCharacter(activityCharacterState());
 }
-
-function activateAction(action: Activity, fromVoice = false) {
-  if (!trialActive || trialEnded) return;
-  window.clearTimeout(actionTimer); currentAction = action; actionDetector = createActionDetector(action.id); actionArmed = fromVoice ? speechGate.canCheck : voiceMode !== 'speaking';
-  actionInstructionPlayed = !fromVoice || speechGate.canCheck;
-  document.querySelectorAll<HTMLButtonElement>('.act').forEach((button) => button.classList.toggle('selected', ACTIONS[Number(button.dataset.activity)]?.id === action.id));
-  el.activityName.textContent = action.label; el.activityInstructionText.textContent = action.instruction; el.activityProgress.style.width = '0%'; el.manualSuccessButton.disabled = false;
-  setActivityCharacter(action.id === 'wave' ? 'greeting' : 'moving'); el.characterStatus.textContent = `Lumi says: ${action.instruction}`; el.activityFeedback.textContent = camera.active ? (actionArmed ? 'Camera on · checking locally' : 'Listen to Lumi first · camera is waiting') : 'Camera off · manual mode';
-}
-
-function chooseAction(index: number) {
-  if (!trialActive || trialEnded || !ACTIONS[index]) return;
-  if (conversation || connecting) { prepareGuidedGame(ACTIONS[index]); scheduleMovementPrompt(); return; }
-  awaitingGuidedPrompt = false; guidedIndex = -1; pendingAgentAction = null;
-  activateAction(ACTIONS[index]);
+function activateAction(action: Activity) {
+  if (!trialActive || trialEnded || guide.phase !== 'playing') return;
+  window.clearTimeout(actionTimer); currentAction = action; actionDetector = createActionDetector(action.id);
+  actionArmed = speechGate.canCheck; actionInstructionPlayed = speechGate.canCheck;
+  el.activityName.textContent = action.label;
+  el.characterStatus.textContent = action.label;
+  el.activityFeedback.textContent = camera.active ? 'Listen to Lumi first' : cameraProblem;
+  setActivityCharacter(activityCharacterState());
 }
 
 function acknowledgeAction(verified: boolean) {
   if (!trialActive || trialEnded || !currentAction) return;
   const completed = currentAction;
-  currentAction = null; actionDetector = null; actionArmed = false; el.manualSuccessButton.disabled = true;
-  setActivityCharacter('celebrating'); el.characterStatus.textContent = verified ? 'Lumi saw it — waiting for her voice!' : 'Nice try! (unverified)'; el.activityFeedback.textContent = verified ? 'Movement detected ✓' : 'Marked complete · unverified';
+  currentAction = null; actionDetector = null; actionArmed = false;
+  setActivityCharacter('celebrating'); el.characterStatus.textContent = verified ? 'Movement detected!' : 'Nice try! (unverified)';
+  el.activityFeedback.textContent = verified ? 'Movement detected ✓' : 'Marked complete · unverified';
+  el.activityName.textContent = verified ? 'Well done!' : 'Unverified';
   window.clearTimeout(actionTimer);
   if (verified && conversation && guidedIndex >= 0 && GUIDED_SEQUENCE[guidedIndex]?.id === completed.id) {
     guidedIndex += 1;
@@ -239,234 +200,197 @@ function acknowledgeAction(verified: boolean) {
       // The only vision-derived data sent to ElevenLabs is this completion event.
       // Video, images, landmarks, and confidence scores remain on this device.
       conversation.sendUserMessage(completionEvent(next));
-    } catch { hint('Lumi could not receive the completion event. Stop and restart the demo.'); }
+    } catch { setVoiceStatus('Lumi could not receive the completion event. Stop and start the demo.'); }
     actionTimer = window.setTimeout(() => { if (trialActive && !trialEnded && !currentAction) resetActivity(); }, 10000);
     return;
   }
   actionTimer = window.setTimeout(() => { if (trialActive && !trialEnded) resetActivity(); }, 1800);
 }
-
 function beginTrial() {
   if (trialActive && !trialEnded) return;
+  reconnectAttempts = 0;
   if (IS_INTERNAL) {
     trialActive = true; trialEnded = false; el.sessionLabel.textContent = 'TEAM DEMO'; el.countdown.textContent = '—'; show(el.sessionBar, true);
   } else {
     if (clock.started && !clock.expired) return;
     trialActive = true; trialEnded = false; show(el.sessionBar, true); clock.start();
   }
-  show(el.welcomePanel, false); show(el.activityButtons, true); resetActivity(); setCharacter('idle');
-  // One existing Start Demo gesture starts both permissions/connections. Do not
-  // wait for the camera/model before starting voice and unlocking its audio.
+  show(el.welcomePanel, false); show(el.conversationPanel, true); resetActivity(); setCharacter('idle');
+  // One browser gesture starts both permissions and unlocks voice output.
   void camera.start(); void startConversation();
 }
-
 function endTrial(expired = false) {
   if (!trialActive && !expired) return;
-  trialActive = false; trialEnded = expired || trialEnded; endConversation(); camera.stop(); resetActivity(); show(el.sessionBar, false);
+  trialActive = false; trialEnded = expired || trialEnded; resumeCamera = false; resumeVoice = false;
+  endConversation(); camera.stop(); resetActivity(); show(el.sessionBar, false); show(el.conversationPanel, false);
   if (!IS_INTERNAL) clock.stop();
   if (expired && !IS_INTERNAL) { setCharacter('greeting'); el.characterStatus.textContent = 'Thank you for playing with Lumi!'; show(el.completionDialog, true); }
-  else { show(el.welcomePanel, true); show(el.activityButtons, false); setCharacter('idle'); el.characterStatus.textContent = 'Lumi is ready to play'; }
+  else { show(el.welcomePanel, true); setCharacter('idle'); el.characterStatus.textContent = 'Meet Lumi'; }
 }
-
 async function requestSignedUrl(signal: AbortSignal): Promise<string> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  const response = await fetch(VOICE_ENDPOINT, { method: 'POST', headers, body: JSON.stringify({ scope: 'public' }), signal });
+  const response = await fetch(VOICE_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope: 'public' }), signal });
   const data = await response.json().catch(() => ({})) as { signedUrl?: string; error?: string };
   if (!response.ok || !data.signedUrl) throw new Error(data.error || 'Voice is not configured yet.');
   return data.signedUrl;
 }
-
-function describeFailure(error: unknown): string {
-  const name = (error as { name?: string })?.name || ''; const message = error instanceof Error ? error.message : String(error || '');
-  if (name === 'NotAllowedError' || /permission denied|not allowed/i.test(message)) return 'Microphone access was denied. You can still use text or movement play.';
-  if (name === 'NotFoundError') return 'No microphone was found. You can still use text or movement play.';
-  if (/quota/i.test(message)) { quotaExhausted = true; return QUOTA_MSG; }
-  if (name === 'TypeError' && /fetch|network/i.test(message)) return 'Voice service is unreachable. Movement play is still available.';
-  return message || 'Lumi is not available right now. Please try again later.';
-}
-
-function clearPromptTimers() { window.clearTimeout(instructionTimer); window.clearTimeout(responseTimer); }
-
-function prepareGuidedGame(firstAction?: Activity) {
-  clearPromptTimers(); guidedIndex = -1; resetActivity();
-  GUIDED_SEQUENCE.splice(0, GUIDED_SEQUENCE.length, ...(firstAction ? [firstAction, ...DEFAULT_GUIDED_SEQUENCE.filter((action) => action.id !== firstAction.id)] : DEFAULT_GUIDED_SEQUENCE));
-  guidedIndex = 0; awaitingGuidedPrompt = true; pendingAgentAction = null;
-  promptKey = ''; promptAttempts = 0; guidedFeedback = ''; speechGate.userTurn();
-  el.activityName.textContent = 'Getting the game ready';
-  el.activityInstructionText.textContent = 'Listen to Lumi, then show the movement. Your camera checks it here.';
-  openPlayView();
-}
-
 function clearVoiceGame() {
-  clearPromptTimers(); awaitingGuidedPrompt = false; guidedIndex = -1; pendingAgentAction = null;
-  guidedFeedback = ''; promptKey = ''; promptAttempts = 0; speechGate.reset(); seenMessages.clear();
-  // Camera play remains usable when voice fails or is stopped.
-  if (currentAction && actionDetector) { actionDetector.reset(); actionArmed = true; }
+  guide.reset(); awaitingGuidedPrompt = false; guidedIndex = -1;
+  speechGate.reset(); invitationGate.reset(); seenMessages.clear(); resetActivity();
 }
-
-function updateGameContext(message: string) {
-  try { conversation?.sendContextualUpdate(message); }
-  catch { hint('Voice could not receive the game context. Stop and restart the demo.'); }
+function prepareGuidedGame() {
+  guidedIndex = -1; resetActivity();
+  GUIDED_SEQUENCE.splice(0, GUIDED_SEQUENCE.length, ...DEFAULT_GUIDED_SEQUENCE);
+  guidedIndex = 0; awaitingGuidedPrompt = true; invitationGate.reset();
+  el.activityName.textContent = 'A little snow adventure';
 }
-
-function watchForMovement() {
-  window.clearTimeout(responseTimer);
-  if (!awaitingGuidedPrompt || currentAction) return;
-  const mySession = sessionId;
-  responseTimer = window.setTimeout(() => { if (mySession === sessionId) scheduleMovementPrompt(); }, 7000);
-}
-
-function scheduleMovementPrompt() {
-  window.clearTimeout(instructionTimer);
-  if (!trialActive || trialEnded || !conversation || !awaitingGuidedPrompt || currentAction || voiceMode === 'speaking') return;
-  const expected = pendingAgentAction || GUIDED_SEQUENCE[guidedIndex];
-  if (!expected) return;
-  const key = `${guidedIndex}:${expected.id}`;
-  if (key !== promptKey) { promptKey = key; promptAttempts = 0; }
-  if (promptAttempts >= 2) {
-    guidedFeedback = 'No movement instruction yet · say “play again” or choose a movement';
-    el.activityFeedback.textContent = guidedFeedback;
-    return;
-  }
-  const mySession = sessionId;
-  // Wait for a late final transcript before requesting another spoken prompt.
-  instructionTimer = window.setTimeout(() => {
-    if (mySession !== sessionId || !trialActive || trialEnded || !conversation || !awaitingGuidedPrompt || currentAction || voiceMode === 'speaking') return;
-    promptAttempts += 1; speechGate.userTurn();
-    try { conversation.sendUserMessage(movementRequest(expected)); watchForMovement(); }
-    catch { guidedFeedback = 'Voice could not start the movement · choose a movement to keep playing'; el.activityFeedback.textContent = guidedFeedback; }
-  }, 450);
-}
-
 function onUserMessage(text: string) {
   if (!trialActive || trialEnded) return;
-  speechGate.userTurn();
-  const intent = gameIntent(text);
-  if (intent === 'stop') {
-    clearVoiceGame(); resetActivity();
-    updateGameContext('The player stopped the movement game. No movement completion was confirmed. Wait for the player to request another game.');
-  } else if (intent) {
-    if (intent === 'restart' || guidedIndex < 0 || guidedIndex >= GUIDED_SEQUENCE.length) prepareGuidedGame();
-    else { guidedFeedback = ''; promptAttempts = 0; }
-    updateGameContext(GAME_CONTEXT);
-    scheduleMovementPrompt();
+  const decision = guide.user(text, invitationGate.canCheck);
+  speechGate.userTurn(); invitationGate.userTurn();
+  if (decision === 'stop') {
+    clearVoiceGame(); updateGameContext('The child wants to pause or chat. Follow their choice. No movement is complete.');
+  } else if (decision === 'invite') {
+    prepareGuidedGame();
+    updateGameContext('The child wants to play. Acknowledge them warmly in our snow adventure. Ask if they are ready to wave hello with you, then WAIT for their answer. No movement command yet.');
+  } else if (decision === 'begin') {
+    const expected = GUIDED_SEQUENCE[guidedIndex];
+    updateGameContext(`The child agreed after your invitation. Guide them warmly and give this one instruction: ${expected?.instruction || DEFAULT_GUIDED_SEQUENCE[0].instruction} Then wait for local completion. Do not add another movement.`);
   }
 }
-
 function onAgentMessage(text: string, eventId: number) {
   setTranscript(text);
-  if (!trialActive || trialEnded || guidedIndex < 0) return;
+  if (!trialActive || trialEnded) return;
+  if (guide.phase === 'invitation') {
+    if (readyInvitation(text)) invitationGate.instruction(eventId);
+    return;
+  }
+  if (guide.phase !== 'playing' || guidedIndex < 0) return;
   const requested = spokenAction(text);
+  if (!requested) return;
   if (currentAction) {
-    if (requested?.id === currentAction.id) {
+    if (requested.id === currentAction.id) {
       speechGate.instruction(eventId);
       if (speechGate.canCheck) { actionInstructionPlayed = true; actionArmed = true; }
-      return;
-    }
-    if (!requested) return;
-    if (actionInstructionPlayed) {
-      updateGameContext(`The active movement is still ${currentAction.label}. Wait for its completion event before giving another movement.`);
-      return;
-    }
-    // A correction before instruction playback is not a completed round.
+    } else updateGameContext(`We are still trying ${currentAction.label}. Wait, or let the child choose to stop. No completion has been confirmed.`);
+    return;
   }
-  if (!awaitingGuidedPrompt && !currentAction) return;
-  if (!requested) { scheduleMovementPrompt(); return; }
-  clearPromptTimers(); guidedFeedback = ''; pendingAgentAction = null;
-  // A supported spoken instruction is the source of truth, even if the agent
-  // says "raise one hand" when the default plan expected both hands.
+  if (!awaitingGuidedPrompt) return;
+  // Follow the supported action actually spoken, never a different canned cue.
   GUIDED_SEQUENCE[guidedIndex] = requested;
-  awaitingGuidedPrompt = false; speechGate.instruction(eventId);
-  activateAction(requested, true); openPlayView();
-  updateGameContext(`The active movement is ${requested.label}. Wait for the completion event; do not advance based on conversation alone.`);
+  awaitingGuidedPrompt = false; speechGate.instruction(eventId); activateAction(requested);
+  updateGameContext(`The current movement is ${requested.label}. Wait for its completion event. Praise and ask before the next movement. Conversation alone cannot verify it.`);
 }
-
 function onVoiceMode(mode: 'speaking' | 'listening') {
   const wasSpeaking = voiceMode === 'speaking';
-  voiceMode = mode; speechGate.mode(mode);
+  voiceMode = mode; speechGate.mode(mode); invitationGate.mode(mode);
   if (mode === 'speaking') {
-    window.clearTimeout(instructionTimer); actionArmed = false;
-    setVoiceStatus('Lumi is speaking · you can interrupt'); setCharacter('speaking');
+    actionArmed = false; setVoiceStatus('Lumi is talking · you can interrupt'); setCharacter('speaking');
   } else {
     if (wasSpeaking && currentAction && actionDetector) { actionDetector.reset(); actionInstructionPlayed ||= speechGate.canCheck; actionArmed = actionInstructionPlayed; }
-    setVoiceStatus('Voice on · listening'); setCharacter(activityCharacterState()); scheduleMovementPrompt();
+    setVoiceStatus('Lumi is listening'); setCharacter(activityCharacterState());
   }
 }
-
+function recoverVoice(error: unknown) {
+  const failure = voiceFailure(error);
+  clearVoiceGame(); setCharacter(activityCharacterState());
+  window.clearTimeout(retryTimer); retryTimer = undefined;
+  if (failure.retryable && trialActive && !trialEnded && !document.hidden && reconnectAttempts < 2) {
+    const delay = ++reconnectAttempts * 2000;
+    setVoiceStatus(`${failure.message} Reconnecting (${reconnectAttempts}/2)…`);
+    retryTimer = window.setTimeout(() => { retryTimer = undefined; void startConversation(); }, delay);
+  } else setVoiceStatus(failure.retryable ? `${failure.message} Stop and start the demo to try again.` : failure.message);
+}
 async function startConversation() {
-  if (!trialActive || trialEnded) return;
-  if (quotaExhausted) { setVoiceStatus(QUOTA_MSG); return; }
-  if (conversation || connecting) return;
-  if (!PUBLIC_AGENT_ID && !VOICE_ENDPOINT) { const message = 'Voice is not activated yet. Movement play is still available.'; setVoiceStatus(message); hint(message); return; }
-  if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) { const message = 'Voice needs a secure page and a microphone-capable browser.'; setVoiceStatus(message); hint(message); return; }
-  clearVoiceGame(); prepareGuidedGame();
-  connecting = true; const mySession = ++sessionId; const request = new AbortController(); voiceRequest = request; voiceMode = 'listening'; setCharacter('listening'); syncVoiceControls(); setTranscript(''); setVoiceStatus('Connecting to Lumi…');
-  // Include signed-URL fetching in the deadline, and dispose of late sessions.
+  if (!trialActive || trialEnded || conversation || connecting) return;
+  if (!PUBLIC_AGENT_ID && !VOICE_ENDPOINT) { setVoiceStatus('Voice is not configured.'); return; }
+  if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) { setVoiceStatus('Voice needs HTTPS and a microphone-capable browser.'); return; }
+  clearVoiceGame(); connecting = true;
+  const mySession = ++sessionId; const request = new AbortController(); voiceRequest = request;
+  voiceMode = 'listening'; setCharacter('listening'); setTranscript(''); setVoiceStatus('Connecting to Lumi…');
   const timeout = window.setTimeout(() => {
     if (mySession !== sessionId || conversation) return;
-    sessionId++; request.abort(); connecting = false; voiceMode = 'idle'; clearVoiceGame(); syncVoiceControls();
-    setVoiceStatus('Voice connection timed out · restart the demo to retry'); setActivityCharacter(activityCharacterState());
+    sessionId++; request.abort(); connecting = false; voiceMode = 'idle'; clearVoiceGame();
+    // The SDK cannot cancel pending permission/setup. Do not open overlapping
+    // sessions on a timeout; a late result is disposed below.
+    setVoiceStatus('Voice connection timed out. Stop and start the demo to try again.'); setCharacter(activityCharacterState());
   }, CONNECT_TIMEOUT_MS);
   try {
     const access = PUBLIC_AGENT_ID ? { agentId: PUBLIC_AGENT_ID } : { signedUrl: await requestSignedUrl(request.signal) };
-    if (voiceRequest === request) voiceRequest = null;
     if (mySession !== sessionId || !trialActive || trialEnded) return;
-    const starting = Conversation.startSession({ ...access, connectionType: 'websocket', libsampleratePath: new URL('./vendor/libsamplerate.worklet.js', document.baseURI).href,
+    const connected = await Conversation.startSession({ ...access, connectionType: 'websocket',
+      libsampleratePath: new URL('./vendor/libsamplerate.worklet.js', document.baseURI).href,
       clientTools: { showMovement: ({ activity }: { activity?: string }) => {
         if (mySession !== sessionId || !trialActive || trialEnded) return 'The demo has ended.';
-        const action = activity === GUIDED_RAISE_HAND.id ? GUIDED_RAISE_HAND : ACTIONS.find((item) => item.id === activity);
-        if (!action) return 'Unknown movement.';
-        pendingAgentAction = action;
-        return 'The movement will be shown after you say the instruction aloud.';
+        if (!DEFAULT_GUIDED_SEQUENCE.some((item) => item.id === activity)) return 'Only wave and sway can be demonstrated. Invite the child first.';
+        return 'Say the matching instruction aloud only after the child agrees. Wait for local completion.';
       } },
-      onConnect: () => { if (mySession === sessionId) { hint(''); setVoiceStatus(isLumiSpeaking() ? 'Lumi is speaking' : 'Voice on · listening'); setCharacter(isLumiSpeaking() ? 'speaking' : 'listening'); } },
+      onConnect: () => { if (mySession === sessionId) setVoiceStatus('Lumi is listening'); },
       onMessage: (message) => {
         if (mySession !== sessionId || !trialActive || trialEnded) return;
         const role = message.role || (message.source === 'ai' ? 'agent' : 'user');
         if (Number.isFinite(message.event_id)) {
           const key = `${role}:${message.event_id}`;
           if (seenMessages.has(key)) return;
-          seenMessages.add(key);
-          if (seenMessages.size > 64) seenMessages.delete(seenMessages.values().next().value!);
+          seenMessages.add(key); if (seenMessages.size > 64) seenMessages.delete(seenMessages.values().next().value!);
         }
         if (role === 'agent') onAgentMessage(message.message, message.event_id); else onUserMessage(message.message);
       },
       onModeChange: ({ mode }) => { if (mySession === sessionId) onVoiceMode(mode); },
-      onAudioAlignmentPlayback: ({ event_id }) => { if (mySession === sessionId) speechGate.audio(event_id); },
-      onInterruption: () => { if (mySession === sessionId) { speechGate.interrupt(); actionArmed = false; if (currentAction && !actionInstructionPlayed) resetActivity(); } },
-      onError: (message) => { if (mySession === sessionId) { const failure = describeFailure(message); setVoiceStatus(failure); hint(failure); } },
-      onDisconnect: (details) => { if (mySession !== sessionId) return; sessionId++; conversation = null; connecting = false; voiceMode = 'idle'; clearVoiceGame(); syncVoiceControls(); if (details.reason !== 'user') { const failure = details.reason === 'error' ? describeFailure(details.message) : CLOSED_MSG; setVoiceStatus(failure); hint(failure); } else setVoiceStatus('Voice stopped · camera can stay on'); setActivityCharacter(activityCharacterState()); },
-    }) as Promise<VoiceConversation>;
-    const connected = await starting;
+      onAudioAlignmentPlayback: ({ event_id }) => { if (mySession === sessionId) { speechGate.audio(event_id); invitationGate.audio(event_id); } },
+      onInterruption: () => {
+        if (mySession !== sessionId) return;
+        speechGate.interrupt(); invitationGate.interrupt(); actionArmed = false;
+        if (currentAction && !actionInstructionPlayed) { resetActivity(); awaitingGuidedPrompt = true; }
+      },
+      onError: (message) => { if (mySession === sessionId) setVoiceStatus(voiceFailure(message).message); },
+      onDisconnect: (details) => {
+        if (mySession !== sessionId) return;
+        sessionId++; conversation = null; connecting = false; voiceMode = 'idle';
+        if (details.reason === 'user' || details.reason === 'agent') { clearVoiceGame(); setVoiceStatus('Lumi’s voice session ended. Stop and start the demo to talk again.'); }
+        else recoverVoice(details.message);
+      },
+    }) as VoiceConversation;
     if (mySession !== sessionId || !trialActive || trialEnded) { await connected.endSession().catch(() => {}); return; }
-    conversation = connected; connecting = false; syncVoiceControls();
-    // Keep the SDK microphone open for natural interruption; the SDK's input
-    // pipeline provides echo cancellation instead of muting the whole reply.
-    updateGameContext(GAME_CONTEXT); scheduleMovementPrompt(); watchForMovement();
-  } catch (error) { if (mySession === sessionId) { sessionId++; connecting = false; voiceMode = 'idle'; clearVoiceGame(); syncVoiceControls(); setActivityCharacter(activityCharacterState()); const failure = describeFailure(error); setVoiceStatus(failure); hint(failure); } }
-  finally { window.clearTimeout(timeout); if (voiceRequest === request) voiceRequest = null; }
+    conversation = connected; connecting = false;
+    updateGameContext(GAME_CONTEXT);
+    updateGameContext(camera.active ? 'Local movement checking is available.' : 'Local movement checking is not available yet. Keep chatting.');
+    // No synthetic user request or movement instruction is sent at connection.
+  } catch (error) {
+    if (mySession === sessionId) { sessionId++; connecting = false; voiceMode = 'idle'; recoverVoice(error); }
+  } finally { window.clearTimeout(timeout); if (voiceRequest === request) voiceRequest = null; }
+}
+function endConversation() {
+  sessionId++; window.clearTimeout(retryTimer); retryTimer = undefined; voiceRequest?.abort(); voiceRequest = null;
+  const current = conversation; conversation = null; connecting = false; voiceMode = 'idle'; clearVoiceGame();
+  if (current) void current.endSession().catch(() => {});
+  setVoiceStatus('Voice stopped');
 }
 
-function endConversation() { sessionId++; voiceRequest?.abort(); voiceRequest = null; const current = conversation; conversation = null; connecting = false; voiceMode = 'idle'; clearVoiceGame(); if (current) current.endSession().catch(() => {}); syncVoiceControls(); setVoiceStatus('Voice stopped · restart the demo to reconnect'); if (trialActive) setActivityCharacter(activityCharacterState()); }
-
-function sendTextMessage(text: string) { const message = text.trim(); if (!message) return; if (!conversation) { hint('Voice is not connected. Stop and restart the demo to retry.'); return; } try { onUserMessage(message); conversation.sendUserMessage(message); hint(''); } catch { hint('Message not sent. Stop and restart the demo to reconnect.'); } }
-
-el.playButton.addEventListener('click', openPlayView); el.lumiButton.addEventListener('click', openLumiView); el.startDemoButton.addEventListener('click', beginTrial); el.stopDemoButton.addEventListener('click', () => endTrial(false));
-document.querySelectorAll<HTMLButtonElement>('.act').forEach((button) => button.addEventListener('click', () => chooseAction(Number(button.dataset.activity))));
-el.stopCameraButton.addEventListener('click', () => camera.stop()); el.manualSuccessButton.addEventListener('click', () => acknowledgeAction(false));
-el.stopButton.addEventListener('click', endConversation); el.playStopButton.addEventListener('click', endConversation); el.typeButton.addEventListener('click', () => { el.debugInput.hidden = !el.debugInput.hidden; if (!el.debugInput.hidden) el.debugText.focus(); });
-el.debugInput.addEventListener('submit', (event) => { event.preventDefault(); sendTextMessage(el.debugText.value); el.debugText.value = ''; });
-el.closeCompletionButton.addEventListener('click', () => { show(el.completionDialog, false); show(el.welcomePanel, true); show(el.activityButtons, false); }); el.restartDemoButton.addEventListener('click', () => { show(el.completionDialog, false); beginTrial(); });
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { endConversation(); camera.stop(); } else if (!IS_INTERNAL) clock.reconcile(); });
+el.startDemoButton.addEventListener('click', beginTrial);
+el.stopDemoButton.addEventListener('click', () => endTrial(false));
+el.stopCameraButton.addEventListener('click', () => { resumeCamera = false; camera.stop(); });
+el.closeCompletionButton.addEventListener('click', () => { show(el.completionDialog, false); show(el.welcomePanel, true); });
+el.restartDemoButton.addEventListener('click', () => { show(el.completionDialog, false); beginTrial(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { resumeCamera = camera.active; resumeVoice = Boolean(conversation || connecting || retryTimer); endConversation(); camera.stop(); }
+  else {
+    if (!IS_INTERNAL) clock.reconcile();
+    if (trialActive && !trialEnded) { if (resumeCamera) void camera.start(); if (resumeVoice) void startConversation(); }
+    resumeCamera = false; resumeVoice = false;
+  }
+});
 window.addEventListener('pagehide', () => { endConversation(); camera.dispose(); });
 motionPreference.addEventListener('change', (event) => {
   motionReduced = event.matches; resetGestureMirror();
   const state = characterState || 'idle'; characterState = null; setCharacter(state);
 });
-
-openPlayView();
+setCharacter('idle');
 if (IS_INTERNAL) {
-  $('welcomeTitle').textContent = 'Team Demo — play with Lumi';
-  $('trialNote').textContent = 'Start Demo asks for camera and microphone permission. Video stays here; microphone audio goes to the voice service. Team Demo has no time limit.';
+  $('welcomeTitle').textContent = 'Meet Lumi · Team Demo';
+  $('trialNote').textContent = 'Start asks for camera and microphone permission. Video stays here; microphone audio goes to the voice service. Team Demo has no time limit.';
 }
-(window as unknown as { lumi: object }).lumi = { get connected() { return Boolean(conversation); }, get mode() { return viewMode; }, get trialActive() { return trialActive; }, get trialEnded() { return trialEnded; }, get internal() { return IS_INTERNAL; }, startDemo: beginTrial, stopDemo: () => endTrial(false) };
+(window as unknown as { lumi: object }).lumi = {
+  get connected() { return Boolean(conversation); }, get trialActive() { return trialActive; },
+  get trialEnded() { return trialEnded; }, get internal() { return IS_INTERNAL; },
+  startDemo: beginTrial, stopDemo: () => endTrial(false),
+};
